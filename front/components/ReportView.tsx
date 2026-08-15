@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { fetchReport } from "@/lib/api";
+import { fetchReport, getLatLng } from "@/lib/api";
 import { AddressSearch } from "./AddressSearch";
 import { MapPanel } from "./MapPanel";
 import { ReportSkeleton } from "./ReportSkeleton";
@@ -12,30 +12,40 @@ import { VerdictBanner } from "./VerdictBanner";
 import { BuildingIcon, BlockIcon, ChevronRightIcon } from "./icons";
 import type { ReportResponse } from "@/lib/types";
 
+interface LoadedReport {
+  address: string;
+  lat: number;
+  lng: number;
+  data: ReportResponse;
+}
+
 export function ReportView() {
   const searchParams = useSearchParams();
   const address = searchParams.get("address") ?? "";
-  const [result, setResult] = useState<{ address: string; data: ReportResponse } | null>(null);
+  const [result, setResult] = useState<LoadedReport | null>(null);
   const [errorState, setErrorState] = useState<{ address: string; message: string } | null>(null);
 
   useEffect(() => {
     if (!address) return;
     let cancelled = false;
-    fetchReport(address)
-      .then((data) => {
+    (async () => {
+      try {
+        const coords = await getLatLng(address);
+        if (!coords) throw new Error("Couldn't locate that address.");
+        const data = await fetchReport(coords.lat, coords.lng);
         if (cancelled) return;
-        setResult({ address, data });
-      })
-      .catch((e) => {
+        setResult({ address, lat: coords.lat, lng: coords.lng, data });
+      } catch (e) {
         if (cancelled) return;
-        setErrorState({ address, message: e.message ?? "Something went wrong" });
-      });
+        setErrorState({ address, message: e instanceof Error ? e.message : "Something went wrong" });
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, [address]);
 
-  const report = result?.address === address ? result.data : null;
+  const report = result?.address === address ? result : null;
   const error = errorState?.address === address ? errorState.message : null;
 
   if (!address) {
@@ -81,22 +91,23 @@ export function ReportView() {
       </div>
 
       <VerdictBanner
-        buildingBand={report.buildingHealth.band}
-        blockBand={report.blockQuality.band}
+        buildingBand={report.data.buildingHealth.band}
+        blockBand={report.data.blockQuality.band}
         address={report.address}
-        borough={report.borough}
       />
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <ScorePanelCard
           icon={<BuildingIcon className="h-4.5 w-4.5" />}
-          panel={report.buildingHealth}
+          title="Building Health"
+          panel={report.data.buildingHealth}
           colorVar="--series-building"
           description="Complaints tied to this building"
         />
         <ScorePanelCard
           icon={<BlockIcon className="h-4.5 w-4.5" />}
-          panel={report.blockQuality}
+          title="Block Quality"
+          panel={report.data.blockQuality}
           colorVar="--series-block"
           description="Complaints on the surrounding block"
         />
@@ -106,17 +117,12 @@ export function ReportView() {
         <MapPanel
           centerLat={report.lat}
           centerLng={report.lng}
-          buildingRadiusMeters={report.buildingHealth.radiusMeters}
-          blockRadiusMeters={report.blockQuality.radiusMeters}
-          buildingComplaints={report.buildingHealth.recentComplaints}
-          blockComplaints={report.blockQuality.recentComplaints}
+          buildingRadiusMeters={report.data.buildingHealth.radiusMeters}
+          blockRadiusMeters={report.data.blockQuality.radiusMeters}
         />
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-xs text-[color:var(--text-muted)]" style={{ borderColor: "var(--border-hairline)" }}>
-        <span>
-          Source: {report.meta.dataSource} · cached {report.meta.cacheAgeMinutes}m ago
-        </span>
+      <div className="mt-6 flex items-center justify-end border-t pt-4 text-xs text-[color:var(--text-muted)]" style={{ borderColor: "var(--border-hairline)" }}>
         <Link
           href={`/compare?a=${encodeURIComponent(report.address)}`}
           className="font-medium text-[color:var(--text-secondary)] underline-offset-2 hover:underline"

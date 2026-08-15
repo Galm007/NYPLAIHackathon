@@ -1,14 +1,13 @@
 import { CATEGORY_LABEL } from "@/lib/score";
-import type { ComplaintCategory } from "@/lib/types";
 
 export function ComplaintBreakdownBars({
   counts,
   colorVar,
 }: {
-  counts: Partial<Record<ComplaintCategory, number>>;
+  counts: Record<string, number>;
   colorVar: string;
 }) {
-  const entries = Object.entries(counts) as [ComplaintCategory, number][];
+  const entries = Object.entries(counts);
   const max = Math.max(1, ...entries.map(([, n]) => n));
   const color = `var(${colorVar})`;
 
@@ -17,7 +16,7 @@ export function ComplaintBreakdownBars({
       {entries.map(([cat, count]) => (
         <div key={cat} className="flex items-center gap-3 text-sm">
           <span className="w-36 shrink-0 truncate text-[color:var(--text-secondary)]">
-            {CATEGORY_LABEL[cat]}
+            {CATEGORY_LABEL[cat] ?? cat}
           </span>
           <div className="h-2 flex-1 rounded-full bg-[color:var(--gridline)]">
             <div
