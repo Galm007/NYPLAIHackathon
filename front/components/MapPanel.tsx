@@ -25,8 +25,8 @@ export function MapPanel({
 
   return (
     <div
-      className="overflow-hidden rounded-xl border"
-      style={{ borderColor: "var(--border-hairline)", background: "var(--surface-1)" }}
+      className="overflow-hidden rounded-[var(--radius-lg)]"
+      style={{ boxShadow: "var(--shadow-md)", border: "1px solid var(--border-hairline)", background: "var(--surface-1)" }}
     >
       <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5" style={{ borderColor: "var(--border-hairline)" }}>
         <div className="flex items-center gap-2 text-xs text-[color:var(--text-muted)]">

@@ -20,8 +20,8 @@ export function ScorePanelCard({
 
   return (
     <div
-      className="flex flex-col gap-5 rounded-xl border p-5"
-      style={{ borderColor: "var(--border-hairline)", background: "var(--surface-1)" }}
+      className="flex flex-col gap-5 rounded-[var(--radius-lg)] bg-[color:var(--surface-1)] p-6"
+      style={{ boxShadow: "var(--shadow-md)", border: "1px solid var(--border-hairline)" }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
@@ -62,7 +62,26 @@ export function ScorePanelCard({
         <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
           By category
         </p>
-        <ComplaintBreakdownBars counts={panel.counts} colorVar={colorVar} />
+        <ComplaintBreakdownBars
+          counts={panel.complaintCounts}
+          colorVar={colorVar}
+          panelLabel={panel.label}
+          score={panel.score}
+        />
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
+          12-month trend
+        </p>
+        <TrendSparkline data={panel.trend} colorVar={colorVar} />
+      </div>
+
+      <div>
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
+          Recent complaints
+        </p>
+        <RecentComplaintsList complaints={panel.recentComplaints} />
       </div>
     </div>
   );
