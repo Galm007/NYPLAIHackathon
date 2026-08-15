@@ -69,7 +69,7 @@ export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
   return (
     <div
       ref={containerRef}
-      className="hide-scrollbar flex gap-4 overflow-x-auto pb-1"
+      className="hide-scrollbar flex gap-4 overflow-x-auto py-4"
       style={{
         scrollbarWidth: "none",
         msOverflowStyle: "none",
