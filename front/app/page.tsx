@@ -1,6 +1,17 @@
 import Link from "next/link";
 import { AddressSearch } from "@/components/AddressSearch";
+import { FeaturedCard } from "@/components/FeaturedCard";
 import { BuildingIcon, BlockIcon, MapPinIcon } from "@/components/icons";
+import { buildReport } from "@/lib/mock-data";
+
+const FEATURED_ADDRESSES = [
+  "456 Park Ave, New York, NY 10022",       // great
+  "123 Ludlow St, New York, NY 10002",      // bad-building
+  "88 Bedford Ave, Brooklyn, NY 11249",     // bad-block
+  "37-11 74th St, Jackson Heights, NY 11372", // bad-both
+  "1 Grand Army Plaza, Brooklyn, NY 11238", // great
+  "980 Anderson Ave, Bronx, NY 10452",      // bad-building
+];
 
 const EXAMPLE_ADDRESSES = [
   "123 Ludlow St, New York, NY 10002",
@@ -31,6 +42,8 @@ const FEATURES = [
 ];
 
 export default function Home() {
+  const featuredReports = FEATURED_ADDRESSES.map(buildReport);
+
   return (
     <main className="flex-1">
       <section className="relative isolate overflow-hidden">
@@ -72,6 +85,30 @@ export default function Home() {
               </Link>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+        <div className="mb-5 flex items-baseline justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">
+              Featured NYC addresses
+            </h2>
+            <p className="mt-0.5 text-sm text-[color:var(--text-muted)]">
+              Sample reports — click any to see the full breakdown.
+            </p>
+          </div>
+          <Link
+            href="/compare"
+            className="text-sm font-medium text-[color:var(--brand)] transition-colors hover:text-[color:var(--brand-strong)]"
+          >
+            Compare addresses →
+          </Link>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {featuredReports.map((report) => (
+            <FeaturedCard key={report.address} report={report} />
+          ))}
         </div>
       </section>
 
