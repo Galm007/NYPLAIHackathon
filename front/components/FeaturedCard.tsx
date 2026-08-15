@@ -69,11 +69,8 @@ export function FeaturedCard({ report }: { report: ReportResponse }) {
   return (
     <Link
       href={`/report?address=${encodeURIComponent(address)}`}
-      className="group flex flex-col overflow-hidden rounded-[var(--radius-lg)] bg-[color:var(--surface-1)] transition-[transform,box-shadow] duration-200 hover:-translate-y-1"
-      style={{
-        boxShadow: "var(--shadow-md)",
-        border: "1px solid var(--border-hairline)",
-      }}
+      className="card-pop group flex flex-col overflow-hidden rounded-[var(--radius-lg)] bg-[color:var(--surface-1)]"
+      style={{ border: "1px solid var(--border-hairline)" }}
     >
       {/* Colored top accent bar */}
       <div className="h-1.5 w-full" style={{ background: accentColor }} />
