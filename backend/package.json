@@ -1,0 +1,29 @@
+{
+  "name": "should-i-live-here-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "NYC 311 address risk scoring API (Building Health + Block Quality)",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env src/index.js",
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "baseline": "node --env-file-if-exists=.env scripts/buildBaseline.js",
+    "verify:dataset": "node --env-file-if-exists=.env scripts/verifyDataset.js",
+    "verify:cache": "node --env-file-if-exists=.env scripts/verifyCache.js",
+    "verify:scoring": "node --env-file-if-exists=.env scripts/verifyScoring.js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "mongodb": "^6.20.0"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^11.2.0",
+    "vitest": "^3.2.4"
+  }
+}

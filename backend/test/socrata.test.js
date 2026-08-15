@@ -1,0 +1,347 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import {
+  fetchCountsForTier,
+  fetchAllCounts,
+  fetchComplaints,
+  SocrataError,
+} from "../src/providers/socrata.js";
+import {
+  LOCATION_FIELD,
+  RADIUS_TIERS,
+  SOCRATA_ENDPOINT,
+} from "../src/config/constants.js";
+
+// No network. `fetch` is stubbed so we can assert on the SoQL we generate and
+// on how the client behaves when Socrata misbehaves.
+
+/** Builds a Response-alike; `rows` is what res.json() resolves to. */
+function jsonResponse(rows, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => rows,
+    text: async () => JSON.stringify(rows),
+  };
+}
+
+function errorResponse(status, body = "boom") {
+  return { ok: false, status, json: async () => ({}), text: async () => body };
+}
+
+let fetchMock;
+const calls = () => fetchMock.mock.calls.map(([url]) => new URL(url));
+
+beforeEach(() => {
+  fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
+});
+
+describe("query construction", () => {
+  beforeEach(() => {
+    fetchMock.mockResolvedValue(jsonResponse([]));
+  });
+
+  it("hits the pinned dataset endpoint", async () => {
+    await fetchCountsForTier(40.7484, -73.9857, "block");
+    const [url] = calls();
+    expect(`${url.origin}${url.pathname}`).toBe(SOCRATA_ENDPOINT);
+  });
+
+  it("filters with within_circle on the geo column, not latitude/longitude", async () => {
+    // Open item 2: `latitude` is a number and is rejected with a type mismatch.
+    await fetchCountsForTier(40.7484, -73.9857, "building");
+    const where = calls()[0].searchParams.get("$where");
+    expect(where).toContain(
+      `within_circle(${LOCATION_FIELD}, 40.7484, -73.9857, ${RADIUS_TIERS.building.radiusMeters})`
+    );
+    expect(where).not.toMatch(/within_circle\(latitude/);
+  });
+
+  it("groups by complaint_type so one HTTP call covers every bucket in the tier", async () => {
+    await fetchCountsForTier(40.7484, -73.9857, "block");
+    const params = calls()[0].searchParams;
+    expect(params.get("$select")).toBe("complaint_type, count(*) AS count");
+    expect(params.get("$group")).toBe("complaint_type");
+    expect(Number(params.get("$limit"))).toBeGreaterThanOrEqual(50000);
+  });
+
+  it("asks only for the tier's own complaint types", async () => {
+    await fetchCountsForTier(40.7484, -73.9857, "building");
+    const where = calls()[0].searchParams.get("$where");
+    expect(where).toContain("'HEAT/HOT WATER'");
+    // A block-tier type must not leak into the 25m query.
+    expect(where).not.toContain("Illegal Parking");
+  });
+
+  it("emits type literals that parse back to exactly the tier's types", async () => {
+    // Round-tripping the `in (...)` list is the honest check on quoting: an
+    // unescaped apostrophe in a future complaint_type would split one literal
+    // into two and this comparison would fail.
+    await fetchCountsForTier(40.7484, -73.9857, "block");
+    const where = calls()[0].searchParams.get("$where");
+    const list = where.match(/complaint_type in \((.*?)\) AND created_date/)[1];
+    const parsed = list.split(",").map((literal) => {
+      expect(literal).toMatch(/^'.*'$/);
+      return literal.slice(1, -1).replace(/''/g, "'");
+    });
+    expect(parsed).toEqual(Object.values(RADIUS_TIERS.block.buckets).flat());
+  });
+
+  it("bounds the query to the trailing window", async () => {
+    await fetchCountsForTier(40.7484, -73.9857, "block", {
+      now: new Date("2026-08-15T00:00:00Z"),
+    });
+    expect(calls()[0].searchParams.get("$where")).toContain(
+      "created_date > '2024-08-15T00:00:00'"
+    );
+  });
+
+  it("sends the app token when one is configured", async () => {
+    vi.stubEnv("SOCRATA_APP_TOKEN", "tok-123");
+    await fetchCountsForTier(40.7484, -73.9857, "block");
+    expect(fetchMock.mock.calls[0][1].headers["X-App-Token"]).toBe("tok-123");
+  });
+
+  it("reads the token at call time, so it can arrive after import", async () => {
+    vi.stubEnv("SOCRATA_APP_TOKEN", "");
+    await fetchCountsForTier(40.7484, -73.9857, "block");
+    expect(fetchMock.mock.calls[0][1].headers["X-App-Token"]).toBeUndefined();
+
+    vi.stubEnv("SOCRATA_APP_TOKEN", "arrived-later");
+    await fetchCountsForTier(40.7484, -73.9857, "block");
+    expect(fetchMock.mock.calls[1][1].headers["X-App-Token"]).toBe("arrived-later");
+  });
+
+  it("applies a timeout signal", async () => {
+    await fetchCountsForTier(40.7484, -73.9857, "block");
+    expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("bucket summing", () => {
+  it("sums every string variant of a bucket into ONE number", async () => {
+    // The critical rule in CLAUDE.md: noise has 4 variants, plumbing has 2.
+    // Percentiling per string and averaging would underweight noise.
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        { complaint_type: "Noise - Residential", count: "100" },
+        { complaint_type: "Noise - Street/Sidewalk", count: "50" },
+        { complaint_type: "Noise - Vehicle", count: "20" },
+        { complaint_type: "Noise - Commercial", count: "5" },
+        { complaint_type: "Illegal Parking", count: "7" },
+        { complaint_type: "Blocked Driveway", count: "3" },
+        { complaint_type: "Street Condition", count: "11" },
+        { complaint_type: "Sidewalk Condition", count: "4" },
+      ])
+    );
+
+    expect(await fetchCountsForTier(40.7, -73.9, "block")).toEqual({
+      noise: 175,
+      parking: 10,
+      streetCondition: 15,
+    });
+  });
+
+  it("zero-fills buckets Socrata omits entirely", async () => {
+    // Socrata returns no row for an empty group; a missing key becomes NaN in
+    // the scoring mean, which silently poisons the whole sub-score.
+    fetchMock.mockResolvedValue(
+      jsonResponse([{ complaint_type: "HEAT/HOT WATER", count: "42" }])
+    );
+
+    const counts = await fetchCountsForTier(40.7, -73.9, "building");
+    expect(counts).toEqual({
+      heatHotWater: 42,
+      unsanitaryCondition: 0,
+      plumbing: 0,
+    });
+    for (const value of Object.values(counts)) {
+      expect(Number.isNaN(value)).toBe(false);
+    }
+  });
+
+  it("returns all-zero counts rather than {} for an empty response", async () => {
+    fetchMock.mockResolvedValue(jsonResponse([]));
+    expect(await fetchCountsForTier(40.7, -73.9, "building")).toEqual({
+      heatHotWater: 0,
+      unsanitaryCondition: 0,
+      plumbing: 0,
+    });
+  });
+
+  it("ignores complaint types outside our buckets", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        { complaint_type: "HEAT/HOT WATER", count: "5" },
+        { complaint_type: "Rodent", count: "999" },
+      ])
+    );
+    const counts = await fetchCountsForTier(40.7, -73.9, "building");
+    expect(counts.heatHotWater).toBe(5);
+    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(5);
+  });
+
+  it("does not let a block-tier row land in a building-tier result", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse([{ complaint_type: "Illegal Parking", count: "80" }])
+    );
+    const counts = await fetchCountsForTier(40.7, -73.9, "building");
+    expect(counts).toEqual({
+      heatHotWater: 0,
+      unsanitaryCondition: 0,
+      plumbing: 0,
+    });
+  });
+});
+
+describe("fetchAllCounts", () => {
+  it("makes exactly two HTTP calls, one per tier", async () => {
+    fetchMock.mockResolvedValue(jsonResponse([]));
+    await fetchAllCounts(40.7484, -73.9857);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const radii = calls().map((url) =>
+      url.searchParams.get("$where").match(/within_circle\([^)]*?(\d+)\)/)[1]
+    );
+    expect(radii.map(Number).sort((a, b) => a - b)).toEqual([25, 350]);
+  });
+
+  it("returns both tiers keyed by name", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse([{ complaint_type: "HEAT/HOT WATER", count: "3" }])
+    );
+    const { building, block } = await fetchAllCounts(40.7484, -73.9857);
+    expect(building.heatHotWater).toBe(3);
+    expect(block).toEqual({ noise: 0, parking: 0, streetCondition: 0 });
+  });
+
+  it("issues the two calls in parallel, not in sequence", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    fetchMock.mockImplementation(async () => {
+      maxInFlight = Math.max(maxInFlight, ++inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight--;
+      return jsonResponse([]);
+    });
+    await fetchAllCounts(40.7484, -73.9857);
+    expect(maxInFlight).toBe(2);
+  });
+});
+
+describe("retry policy", () => {
+  it("retries a 429 and succeeds", async () => {
+    fetchMock
+      .mockResolvedValueOnce(errorResponse(429))
+      .mockResolvedValueOnce(
+        jsonResponse([{ complaint_type: "PLUMBING", count: "2" }])
+      );
+
+    const counts = await fetchCountsForTier(40.7, -73.9, "building");
+    expect(counts.plumbing).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a 5xx", async () => {
+    fetchMock
+      .mockResolvedValueOnce(errorResponse(503))
+      .mockResolvedValueOnce(jsonResponse([]));
+    await fetchCountsForTier(40.7, -73.9, "building");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry a 400 — malformed SoQL fails identically every time", async () => {
+    fetchMock.mockResolvedValue(
+      errorResponse(400, "query.soql.type-mismatch")
+    );
+    await expect(fetchCountsForTier(40.7, -73.9, "building")).rejects.toThrow(
+      SocrataError
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces the Socrata status and body on a non-retryable failure", async () => {
+    fetchMock.mockResolvedValue(errorResponse(403, "forbidden"));
+    await expect(
+      fetchCountsForTier(40.7, -73.9, "building")
+    ).rejects.toMatchObject({ name: "SocrataError", status: 403 });
+  });
+
+  it("retries network errors and gives up after the configured attempts", async () => {
+    fetchMock.mockRejectedValue(new Error("ECONNRESET"));
+    await expect(fetchCountsForTier(40.7, -73.9, "building")).rejects.toThrow(
+      SocrataError
+    );
+    // 1 initial + SOCRATA_MAX_RETRIES.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("wraps the last error as a SocrataError with a cause", async () => {
+    const network = new Error("ETIMEDOUT");
+    fetchMock.mockRejectedValue(network);
+    await expect(
+      fetchCountsForTier(40.7, -73.9, "building")
+    ).rejects.toMatchObject({ name: "SocrataError", cause: network });
+  });
+});
+
+describe("fetchComplaints", () => {
+  beforeEach(() => {
+    fetchMock.mockResolvedValue(
+      jsonResponse([
+        {
+          complaint_type: "Noise - Residential",
+          latitude: "40.7484",
+          longitude: "-73.9857",
+          created_date: "2026-01-02T03:04:05.000",
+          status: "Closed",
+        },
+        {
+          complaint_type: "HEAT/HOT WATER",
+          latitude: "40.7485",
+          longitude: "-73.9858",
+          created_date: "2026-01-01T00:00:00.000",
+        },
+      ])
+    );
+  });
+
+  it("maps rows into the heatmap contract shape with numeric coords", async () => {
+    const points = await fetchComplaints(40.7484, -73.9857, 350);
+    expect(points[0]).toEqual({
+      type: "Noise - Residential",
+      lat: 40.7484,
+      lng: -73.9857,
+      created_date: "2026-01-02T03:04:05.000",
+      status: "Closed",
+    });
+  });
+
+  it("nulls a missing status rather than dropping the key", async () => {
+    const points = await fetchComplaints(40.7484, -73.9857, 350);
+    expect(points[1].status).toBeNull();
+  });
+
+  it("requests rows (not counts), newest first, under a row cap", async () => {
+    await fetchComplaints(40.7484, -73.9857, 350, { limit: 250 });
+    const params = calls()[0].searchParams;
+    expect(params.get("$group")).toBeNull();
+    expect(params.get("$order")).toBe("created_date DESC");
+    expect(params.get("$limit")).toBe("250");
+  });
+
+  it("includes types from both tiers, since the heatmap shows everything", async () => {
+    await fetchComplaints(40.7484, -73.9857, 350);
+    const where = calls()[0].searchParams.get("$where");
+    expect(where).toContain("'HEAT/HOT WATER'");
+    expect(where).toContain("'Illegal Parking'");
+    expect(where).toContain("within_circle(location, 40.7484, -73.9857, 350)");
+  });
+});
