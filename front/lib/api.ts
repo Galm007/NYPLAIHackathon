@@ -1,18 +1,43 @@
 import type { AutocompleteSuggestion, ReportResponse } from "./types";
 
-// Thin client for the app's own /api/* routes. Today those routes return
-// mock data; once the real backend exists, either point these at it
-// directly or keep them as a same-origin proxy — callers don't change.
-export async function getLatLng(address: string): Promise<{ lat: number; lng: number } | null> {
-  const query = encodeURIComponent(address.trim());
+// Nominatim (the geocoder below) returns zero results whenever a unit
+// designator — apt/unit/suite/floor/room/# — is present, even though the
+// building itself geocodes fine. Since scoring only needs the building's
+// coordinates, strip these before falling back to a second lookup.
+function stripUnit(address: string): string {
+  return address
+    .replace(/[,\s]*#\s*[\w-]+/g, "")
+    .replace(
+      /[,\s]*\b(apt|apartment|unit|suite|ste|fl|floor|rm|room|ph|penthouse|no)\.?\s*[\w-]+/gi,
+      ""
+    )
+    .replace(/\s*,\s*,/g, ",")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function geocode(query: string): Promise<{ lat: number; lng: number } | null> {
   const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`,
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
     { headers: { "User-Agent": "nypl-hackathon-app" } }
   );
   if (!res.ok) return null;
   const data = await res.json();
   if (!data.length) return null;
   return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+}
+
+// Thin client for the app's own /api/* routes. Today those routes return
+// mock data; once the real backend exists, either point these at it
+// directly or keep them as a same-origin proxy — callers don't change.
+export async function getLatLng(address: string): Promise<{ lat: number; lng: number } | null> {
+  const trimmed = address.trim();
+  const result = await geocode(trimmed);
+  if (result) return result;
+
+  const stripped = stripUnit(trimmed);
+  if (stripped && stripped !== trimmed) return geocode(stripped);
+  return null;
 }
 export async function fetchSuggestions(
   query: string,
