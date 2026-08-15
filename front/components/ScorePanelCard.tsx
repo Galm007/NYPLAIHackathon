@@ -18,8 +18,8 @@ export function ScorePanelCard({
 }) {
   return (
     <div
-      className="flex flex-col gap-5 rounded-xl border p-5"
-      style={{ borderColor: "var(--border-hairline)", background: "var(--surface-1)" }}
+      className="flex flex-col gap-5 rounded-[var(--radius-lg)] bg-[color:var(--surface-1)] p-6"
+      style={{ boxShadow: "var(--shadow-md)", border: "1px solid var(--border-hairline)" }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">

@@ -1,20 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9f9f7;
-  --foreground: #0b0b0b;
+  /* --- surfaces & text ------------------------------------------------ */
+  --background: #f5f6f8; /* page canvas */
+  --foreground: #1f2329; /* default text */
 
-  /* chart / data-viz tokens */
-  --surface-1: #fcfcfb;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
-  --gridline: #e1e0d9;
-  --baseline: #c3c2b7;
-  --border-hairline: rgba(11, 11, 11, 0.1);
+  --surface-1: #ffffff; /* cards, inputs, popovers */
+  --surface-2: #eef1f5; /* subtle fills, track backgrounds */
 
-  --series-building: #2a78d6; /* categorical slot 1 - blue */
-  --series-block: #eb6834; /* categorical slot 2 - orange */
+  --text-primary: #1f2329;
+  --text-secondary: #5a626e;
+  --text-muted: #8a929e;
+
+  --gridline: #e6e9ee; /* chart tracks, dividers */
+  --baseline: #d3d8e0; /* chart axis */
+  --border-hairline: #e2e6ec; /* crisp 1px borders */
+
+  /* --- brand ---------------------------------------------------------- */
+  --brand: #006aff; /* Zillow-style primary blue */
+  --brand-strong: #0355cc;
+  --brand-tint: #e6f0ff; /* 8–12% blue wash for chips/icon wells */
+
+  /* categorical data-viz slots (kept for charts) */
+  --series-building: #006aff; /* slot 1 — brand blue */
+  --series-block: #7a5af5; /* slot 2 — violet (was orange) */
 
   --seq-100: #cde2fb;
   --seq-250: #86b6ef;
@@ -22,10 +31,21 @@
   --seq-500: #256abf;
   --seq-650: #104281;
 
-  --status-good: #0ca30c;
-  --status-warning: #fab219;
-  --status-serious: #ec835a;
-  --status-critical: #d03b3b;
+  /* --- status (score bands) ------------------------------------------ */
+  --status-good: #1a9e5f; /* green */
+  --status-warning: #d98a00; /* amber */
+  --status-serious: #e0662e; /* orange */
+  --status-critical: #d63a3a; /* red */
+
+  /* --- elevation ------------------------------------------------------ */
+  --shadow-sm: 0 1px 2px rgba(23, 35, 56, 0.06), 0 1px 3px rgba(23, 35, 56, 0.08);
+  --shadow-md: 0 2px 6px rgba(23, 35, 56, 0.06), 0 8px 24px rgba(23, 35, 56, 0.08);
+  --shadow-lg: 0 12px 32px rgba(23, 35, 56, 0.14);
+
+  /* --- radius scale --------------------------------------------------- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
 }
 
 @theme inline {
@@ -35,31 +55,8 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0d0d0d;
-    --foreground: #ffffff;
-
-    --surface-1: #1a1a19;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --gridline: #2c2c2a;
-    --baseline: #383835;
-    --border-hairline: rgba(255, 255, 255, 0.1);
-
-    --series-building: #3987e5;
-    --series-block: #d95926;
-
-    --status-good: #0ca30c;
-    --status-warning: #fab219;
-    --status-serious: #ec835a;
-    --status-critical: #d03b3b;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
 }

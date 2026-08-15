@@ -84,9 +84,9 @@ export function ComplaintBreakdownBars({
 
         {explanation && isHovered && (
           <div
-            className="pointer-events-none absolute left-1/2 top-[calc(100%-0.25rem)] z-20 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-[color:var(--border-hairline)] p-4 text-sm leading-6 text-[color:var(--text-primary)] shadow-[0_18px_36px_rgba(0,0,0,0.42)] backdrop-blur-sm"
+            className="pointer-events-none absolute left-1/2 top-[calc(100%-0.25rem)] z-20 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 rounded-[var(--radius-md)] border border-[color:var(--border-hairline)] bg-[color:var(--surface-1)] p-4 text-sm leading-6 text-[color:var(--text-primary)]"
             style={{
-              backgroundColor: "rgba(19, 22, 27, 0.72)",
+              boxShadow: "var(--shadow-lg)",
               transform: "translateX(-50%)",
             }}
           >

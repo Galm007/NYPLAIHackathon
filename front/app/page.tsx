@@ -35,15 +35,15 @@ export default function Home() {
     <main className="flex-1">
       <section className="mx-auto max-w-3xl px-4 pt-16 pb-10 text-center sm:px-6 sm:pt-24">
         <span
-          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
-          style={{ color: "var(--series-building)", background: "color-mix(in srgb, var(--series-building) 12%, transparent)" }}
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
+          style={{ color: "var(--brand)", background: "var(--brand-tint)" }}
         >
           Built on NYC 311 public data
         </span>
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-[color:var(--text-primary)] sm:text-5xl">
+        <h1 className="mx-auto mt-5 max-w-2xl text-[2.6rem] font-bold leading-[1.08] tracking-tight text-[color:var(--text-primary)] sm:text-6xl">
           Know before you sign the lease.
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-lg text-[color:var(--text-secondary)]">
+        <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-[color:var(--text-secondary)]">
           Search any NYC address for a Building Health Score and a Block Quality
           Score — landlord complaint history and neighborhood livability, in one
           report.
@@ -51,13 +51,13 @@ export default function Home() {
         <div className="mx-auto mt-8 max-w-xl">
           <AddressSearch autoFocus />
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-sm">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-sm">
           <span className="text-[color:var(--text-muted)]">Try:</span>
           {EXAMPLE_ADDRESSES.map((a) => (
             <Link
               key={a}
               href={`/report?address=${encodeURIComponent(a)}`}
-              className="rounded-full border px-3 py-1 text-[color:var(--text-secondary)] transition-colors hover:text-[color:var(--text-primary)]"
+              className="rounded-full border bg-[color:var(--surface-1)] px-3 py-1 font-medium text-[color:var(--text-secondary)] transition-colors hover:border-[color:var(--brand)] hover:text-[color:var(--brand)]"
               style={{ borderColor: "var(--border-hairline)" }}
             >
               {a.split(",")[0]}
@@ -70,17 +70,17 @@ export default function Home() {
         {FEATURES.map((f) => (
           <div
             key={f.title}
-            className="rounded-xl border p-5"
-            style={{ borderColor: "var(--border-hairline)", background: "var(--surface-1)" }}
+            className="rounded-[var(--radius-lg)] bg-[color:var(--surface-1)] p-6 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5"
+            style={{ boxShadow: "var(--shadow-sm)", border: "1px solid var(--border-hairline)" }}
           >
             <span
-              className="flex h-9 w-9 items-center justify-center rounded-lg"
-              style={{ color: `var(${f.colorVar})`, background: `color-mix(in srgb, var(${f.colorVar}) 14%, transparent)` }}
+              className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)]"
+              style={{ color: `var(${f.colorVar})`, background: `color-mix(in srgb, var(${f.colorVar}) 12%, transparent)` }}
             >
               <f.icon className="h-5 w-5" />
             </span>
-            <h3 className="mt-3 font-semibold text-[color:var(--text-primary)]">{f.title}</h3>
-            <p className="mt-1.5 text-sm text-[color:var(--text-secondary)]">{f.body}</p>
+            <h3 className="mt-4 font-semibold text-[color:var(--text-primary)]">{f.title}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--text-secondary)]">{f.body}</p>
           </div>
         ))}
       </section>
@@ -97,8 +97,8 @@ export default function Home() {
           ].map((s) => (
             <div key={s.step} className="text-center">
               <div
-                className="mx-auto flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold"
-                style={{ background: "var(--gridline)", color: "var(--text-primary)" }}
+                className="mx-auto flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold"
+                style={{ background: "var(--brand-tint)", color: "var(--brand)" }}
               >
                 {s.step}
               </div>
