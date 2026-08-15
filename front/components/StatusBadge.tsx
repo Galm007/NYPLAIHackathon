@@ -4,9 +4,8 @@ import type { ScoreBand } from "@/lib/types";
 
 const ICON: Record<ScoreBand, React.ComponentType<{ className?: string }>> = {
   good: CheckCircleIcon,
-  warning: AlertTriangleIcon,
-  serious: AlertTriangleIcon,
-  critical: XCircleIcon,
+  fair: AlertTriangleIcon,
+  poor: XCircleIcon,
 };
 
 export function StatusBadge({ band, text }: { band: ScoreBand; text?: string }) {

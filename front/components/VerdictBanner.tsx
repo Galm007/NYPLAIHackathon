@@ -6,12 +6,10 @@ export function VerdictBanner({
   buildingBand,
   blockBand,
   address,
-  borough,
 }: {
   buildingBand: ScoreBand;
   blockBand: ScoreBand;
   address: string;
-  borough: string;
 }) {
   const band = overallBand(buildingBand, blockBand);
   const color = `var(${BAND_VAR[band]})`;

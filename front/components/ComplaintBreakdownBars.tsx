@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { CATEGORY_LABEL } from "@/lib/score";
-import type { ComplaintCategory } from "@/lib/types";
 
 export function ComplaintBreakdownBars({
   counts,
@@ -8,12 +7,12 @@ export function ComplaintBreakdownBars({
   panelLabel,
   score,
 }: {
-  counts: Partial<Record<ComplaintCategory, number>>;
+  counts: Record<string, number>;
   colorVar: string;
   panelLabel?: string;
   score?: number;
 }) {
-  const entries = Object.entries(counts) as [ComplaintCategory, number][];
+  const entries = Object.entries(counts);
   const max = Math.max(1, ...entries.map(([, n]) => n));
   const color = `var(${colorVar})`;
   const [isHovered, setIsHovered] = useState(false);

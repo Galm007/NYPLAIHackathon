@@ -1,12 +1,5 @@
 import { bandForScore } from "./score";
-import type {
-  Complaint,
-  ComplaintCategory,
-  ComplaintStatus,
-  ReportResponse,
-  ScorePanel,
-  TrendPoint,
-} from "./types";
+import type { ReportResponse } from "./types";
 
 // ---------------------------------------------------------------------------
 // This module stands in for the real backend (Node/Express + Socrata proxy +
@@ -130,70 +123,33 @@ function titleCaseAddress(raw: string): string {
     .join(" ");
 }
 
-const CATEGORY_TEMPLATES: Record<ComplaintCategory, string[]> = {
-  heatHotWater: [
-    "No heat reported in apartment",
-    "Hot water not working",
-    "Heat complaint - entire building affected",
-  ],
-  unsanitaryCondition: [
-    "Mice/rodent activity reported",
-    "Mold condition in bathroom",
-    "Improper garbage/recycling storage",
-  ],
-  plumbing: [
-    "Water leak from ceiling",
-    "Toilet not working",
-    "Sewer backup reported in basement",
-  ],
-  noise: [
-    "Loud music/party complaint",
-    "Construction noise before permitted hours",
-    "Persistent barking dog",
-  ],
-  illegalParking: [
-    "Vehicle blocking driveway",
-    "Double-parked vehicle blocking traffic",
-    "Parked in a no-standing/bus stop zone",
-  ],
-  streetCondition: [
-    "Pothole reported",
-    "Street light out",
-    "Debris/obstruction in roadway",
-  ],
-};
-
-const BUILDING_CATEGORIES: ComplaintCategory[] = [
-  "heatHotWater",
-  "unsanitaryCondition",
-  "plumbing",
-];
-const BLOCK_CATEGORIES: ComplaintCategory[] = [
-  "noise",
-  "illegalParking",
-  "streetCondition",
-];
-
-const CATEGORY_WEIGHT: Record<ComplaintCategory, number> = {
-  heatHotWater: 1.3,
-  unsanitaryCondition: 1.5,
-  plumbing: 1.0,
-  noise: 0.6,
-  illegalParking: 0.5,
-  streetCondition: 0.8,
-};
+type BuildingCategory = keyof ReportResponse["buildingHealth"]["counts"];
+type BlockCategory = keyof ReportResponse["blockQuality"]["counts"];
 
 // Mean complaint count at flavor multiplier 1.0 ("average"), per category,
 // tuned so an average building and an average block both land in the
-// "Fair" band and a "bad" flavor lands in "Poor"/"Critical" — see the
-// scoring calibration below.
-const CATEGORY_BASE_MEAN: Record<ComplaintCategory, number> = {
-  heatHotWater: 3,
-  unsanitaryCondition: 2,
+// "Fair" band and a "bad" flavor lands in "Poor" — see the scoring
+// calibration below.
+const BUILDING_CATEGORY_MEAN: Record<BuildingCategory, number> = {
+  heat_hot_water: 3,
+  unsanitary: 2,
   plumbing: 3,
+};
+const BUILDING_CATEGORY_WEIGHT: Record<BuildingCategory, number> = {
+  heat_hot_water: 1.3,
+  unsanitary: 1.5,
+  plumbing: 1.0,
+};
+
+const BLOCK_CATEGORY_MEAN: Record<BlockCategory, number> = {
   noise: 6,
-  illegalParking: 7,
-  streetCondition: 5,
+  illegal_parking: 7,
+  street_condition: 5,
+};
+const BLOCK_CATEGORY_WEIGHT: Record<BlockCategory, number> = {
+  noise: 0.6,
+  illegal_parking: 0.5,
+  street_condition: 0.8,
 };
 
 function flavorMultiplier(
@@ -219,131 +175,64 @@ function flavorMultiplier(
 // Score = 100 minus the severity-weighted complaint total, scaled so an
 // "average" flavor (weighted total ~10-11) lands around 65 (Fair) and a
 // "bad" flavor (weighted total ~20-22, double the average multiplier)
-// lands around 25-30 (Poor/Critical).
+// lands around 25-30 (Poor).
 const SCORE_SCALE = 3.5;
 
-function statusFor(rand: () => number): ComplaintStatus {
-  const r = rand();
-  if (r < 0.55) return "closed";
-  if (r < 0.85) return "in-progress";
-  return "open";
-}
-
-function monthLabel(monthsAgo: number): string {
-  const d = new Date();
-  d.setDate(1);
-  d.setMonth(d.getMonth() - monthsAgo);
-  return d.toISOString().slice(0, 7);
-}
-
-function buildTrend(rand: () => number, total: number): TrendPoint[] {
-  const buckets = new Array(12).fill(0);
-  for (let i = 0; i < total; i++) {
-    // Bias slightly toward more-recent months for a touch of realism.
-    const idx = Math.min(11, Math.floor(rand() ** 1.4 * 12));
-    buckets[11 - idx] += 1;
-  }
-  return buckets.map((count, i) => ({
-    month: monthLabel(11 - i),
-    count,
-  }));
-}
-
-function buildComplaints(
+function buildCounts<K extends string>(
   rand: () => number,
-  categories: ComplaintCategory[],
-  counts: Partial<Record<ComplaintCategory, number>>,
-  centerLat: number,
-  centerLng: number,
-  jitter: number
-): Complaint[] {
-  const complaints: Complaint[] = [];
-  for (const cat of categories) {
-    const n = Math.min(counts[cat] ?? 0, 4);
-    const templates = CATEGORY_TEMPLATES[cat];
-    for (let i = 0; i < n; i++) {
-      const monthsAgo = Math.floor(rand() * 11);
-      const d = new Date();
-      d.setDate(Math.floor(1 + rand() * 27));
-      d.setMonth(d.getMonth() - monthsAgo);
-      complaints.push({
-        id: `${cat}-${complaints.length}-${Math.floor(rand() * 1e6)}`,
-        category: cat,
-        label: templates[Math.floor(rand() * templates.length)],
-        date: d.toISOString().slice(0, 10),
-        status: statusFor(rand),
-        description: `311 Service Request · ${cat}`,
-        lat: centerLat + (rand() - 0.5) * jitter,
-        lng: centerLng + (rand() - 0.5) * jitter,
-      });
-    }
-  }
-  return complaints.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
-}
-
-function buildScorePanel(
-  seedKey: string,
-  scope: "building" | "block",
-  seedAddress: SeedAddress,
-  radiusMeters: number
-): ScorePanel {
-  const rand = mulberry32(hashString(seedKey + scope));
-  const categories = scope === "building" ? BUILDING_CATEGORIES : BLOCK_CATEGORIES;
-  const mult = flavorMultiplier(seedAddress.flavor, scope);
-
-  const counts: Partial<Record<ComplaintCategory, number>> = {};
+  means: Record<K, number>,
+  weights: Record<K, number>,
+  mult: number
+): { counts: Record<K, number>; weightedTotal: number } {
+  const counts = {} as Record<K, number>;
   let weightedTotal = 0;
-  let total = 0;
-  for (const cat of categories) {
+  for (const cat of Object.keys(means) as K[]) {
     // Uniform 0..2*mean so the average value across the range is `mean`.
-    const mean = CATEGORY_BASE_MEAN[cat] * mult;
+    const mean = means[cat] * mult;
     const n = Math.round(rand() * 2 * mean);
     counts[cat] = n;
-    total += n;
-    weightedTotal += n * CATEGORY_WEIGHT[cat];
+    weightedTotal += n * weights[cat];
   }
+  return { counts, weightedTotal };
+}
 
-  const score = Math.max(0, Math.min(100, Math.round(100 - weightedTotal * SCORE_SCALE)));
-  const band = bandForScore(score);
-  const jitter = scope === "building" ? 0.00025 : 0.004;
-
-  return {
-    score,
-    band,
-    label: scope === "building" ? "Building Health" : "Block Quality",
-    radiusMeters,
-    totalComplaints: total,
-    complaintCounts: counts,
-    trend: buildTrend(rand, total),
-    recentComplaints: buildComplaints(
-      rand,
-      categories,
-      counts,
-      seedAddress.lat,
-      seedAddress.lng,
-      jitter
-    ),
-  };
+function scoreFromWeightedTotal(weightedTotal: number): number {
+  return Math.max(0, Math.min(100, Math.round(100 - weightedTotal * SCORE_SCALE)));
 }
 
 export function buildReport(query: string): ReportResponse {
   const seedAddress = resolveAddress(query);
-  const buildingHealth = buildScorePanel(seedAddress.description, "building", seedAddress, 25);
-  const blockQuality = buildScorePanel(seedAddress.description, "block", seedAddress, 400);
+
+  const buildingRand = mulberry32(hashString(seedAddress.description + "building"));
+  const { counts: buildingCounts, weightedTotal: buildingWeighted } = buildCounts(
+    buildingRand,
+    BUILDING_CATEGORY_MEAN,
+    BUILDING_CATEGORY_WEIGHT,
+    flavorMultiplier(seedAddress.flavor, "building")
+  );
+  const buildingScore = scoreFromWeightedTotal(buildingWeighted);
+
+  const blockRand = mulberry32(hashString(seedAddress.description + "block"));
+  const { counts: blockCounts, weightedTotal: blockWeighted } = buildCounts(
+    blockRand,
+    BLOCK_CATEGORY_MEAN,
+    BLOCK_CATEGORY_WEIGHT,
+    flavorMultiplier(seedAddress.flavor, "block")
+  );
+  const blockScore = scoreFromWeightedTotal(blockWeighted);
 
   return {
-    query,
-    address: seedAddress.description,
-    borough: seedAddress.borough,
-    lat: seedAddress.lat,
-    lng: seedAddress.lng,
-    buildingHealth,
-    blockQuality,
-    meta: {
-      dataSource: "NYC 311 Service Requests (erm2-nwe9) — sample data",
-      lastUpdated: new Date().toISOString(),
-      cacheAgeMinutes: Math.floor(hashString(seedAddress.description) % 180),
-      isMockData: true,
+    buildingHealth: {
+      score: buildingScore,
+      band: bandForScore(buildingScore),
+      radiusMeters: 25,
+      counts: buildingCounts,
+    },
+    blockQuality: {
+      score: blockScore,
+      band: bandForScore(blockScore),
+      radiusMeters: 400,
+      counts: blockCounts,
     },
   };
 }
