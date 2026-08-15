@@ -1,8 +1,9 @@
 import { ComplaintBreakdownBars } from "./ComplaintBreakdownBars";
+import { RecentComplaintsList } from "./RecentComplaintsList";
 import { ScoreMeter } from "./ScoreMeter";
 import { StatusBadge } from "./StatusBadge";
 import { CONFIDENCE_MESSAGE } from "@/lib/score";
-import type { Confidence, ScoreBand } from "@/lib/types";
+import type { Complaint, Confidence, ScoreBand } from "@/lib/types";
 
 export function ScorePanelCard({
   icon,
@@ -20,6 +21,7 @@ export function ScorePanelCard({
     counts: Record<string, number>;
     confidence: Confidence;
     confidenceReason: string | null;
+    recentComplaints?: Complaint[];
   };
   colorVar: string;
   description: string;
@@ -93,6 +95,15 @@ export function ScorePanelCard({
           score={panel.score}
         />
       </div>
+
+      {panel.recentComplaints !== undefined && (
+        <div>
+          <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
+            Recent complaints
+          </p>
+          <RecentComplaintsList complaints={panel.recentComplaints} />
+        </div>
+      )}
     </div>
   );
 }

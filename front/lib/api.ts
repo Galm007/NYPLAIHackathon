@@ -1,3 +1,4 @@
+import { buildReport } from "./mock-data";
 import type { AutocompleteSuggestion, ReportResponse } from "./types";
 
 // Thin client for the app's own /api/* routes. Today those routes return
@@ -29,7 +30,7 @@ export async function fetchSuggestions(
 
 const API_BASE_URL = "http://localhost:3001";
 
-export async function fetchReport(lat: number, lng: number): Promise<ReportResponse> {
+export async function fetchReport(lat: number, lng: number, address?: string): Promise<ReportResponse> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/score`, {
@@ -38,6 +39,7 @@ export async function fetchReport(lat: number, lng: number): Promise<ReportRespo
       body: JSON.stringify({ lat, lng }),
     });
   } catch {
+    if (address) return buildReport(address);
     throw new Error("Couldn't reach the backend — is it running?");
   }
 

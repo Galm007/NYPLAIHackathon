@@ -32,7 +32,7 @@ export function ReportView() {
       try {
         const coords = await getLatLng(address);
         if (!coords) throw new Error("Couldn't locate that address.");
-        const data = await fetchReport(coords.lat, coords.lng);
+        const data = await fetchReport(coords.lat, coords.lng, address);
         if (cancelled) return;
         setResult({ address, lat: coords.lat, lng: coords.lng, data });
       } catch (e) {
