@@ -33,36 +33,45 @@ const FEATURES = [
 export default function Home() {
   return (
     <main className="flex-1">
-      <section className="mx-auto max-w-3xl px-4 pt-16 pb-10 text-center sm:px-6 sm:pt-24">
-        <span
-          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
-          style={{ color: "var(--brand)", background: "var(--brand-tint)" }}
-        >
-          Built on NYC 311 public data
-        </span>
-        <h1 className="mx-auto mt-5 max-w-2xl text-[2.6rem] font-bold leading-[1.08] tracking-tight text-[color:var(--text-primary)] sm:text-6xl">
-          Know before you sign the lease.
-        </h1>
-        <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-[color:var(--text-secondary)]">
-          Search any NYC address for a Building Health Score and a Block Quality
-          Score — landlord complaint history and neighborhood livability, in one
-          report.
-        </p>
-        <div className="mx-auto mt-8 max-w-xl">
-          <AddressSearch autoFocus />
-        </div>
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-sm">
-          <span className="text-[color:var(--text-muted)]">Try:</span>
-          {EXAMPLE_ADDRESSES.map((a) => (
-            <Link
-              key={a}
-              href={`/report?address=${encodeURIComponent(a)}`}
-              className="rounded-full border bg-[color:var(--surface-1)] px-3 py-1 font-medium text-[color:var(--text-secondary)] transition-colors hover:border-[color:var(--brand)] hover:text-[color:var(--brand)]"
-              style={{ borderColor: "var(--border-hairline)" }}
-            >
-              {a.split(",")[0]}
-            </Link>
-          ))}
+      <section className="relative isolate overflow-hidden">
+        <div
+          className="absolute inset-0 -z-10 bg-cover bg-center"
+          style={{ backgroundImage: "url(/hero-city.jpg)" }}
+        />
+        <div
+          className="absolute inset-0 -z-10"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(11,18,32,0.62) 0%, rgba(11,18,32,0.42) 45%, rgba(11,18,32,0.66) 100%)",
+          }}
+        />
+        <div className="mx-auto max-w-3xl px-4 pt-20 pb-24 text-center sm:px-6 sm:pt-28 sm:pb-28">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
+            Built on NYC 311 public data
+          </span>
+          <h1 className="mx-auto mt-5 max-w-2xl text-[2.6rem] font-bold leading-[1.08] tracking-tight text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)] sm:text-6xl">
+            Know before you sign the lease.
+          </h1>
+          <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-white/90 drop-shadow-[0_1px_8px_rgba(0,0,0,0.4)]">
+            Search any NYC address for a Building Health Score and a Block Quality
+            Score — landlord complaint history and neighborhood livability, in one
+            report.
+          </p>
+          <div className="mx-auto mt-8 max-w-xl">
+            <AddressSearch autoFocus />
+          </div>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-sm">
+            <span className="text-white/75">Try:</span>
+            {EXAMPLE_ADDRESSES.map((a) => (
+              <Link
+                key={a}
+                href={`/report?address=${encodeURIComponent(a)}`}
+                className="rounded-full border border-white/25 bg-white/10 px-3 py-1 font-medium text-white backdrop-blur transition-colors hover:bg-white/20"
+              >
+                {a.split(",")[0]}
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -110,8 +119,20 @@ export default function Home() {
       </section>
 
       <footer className="mx-auto max-w-5xl px-4 py-10 text-center text-xs text-[color:var(--text-muted)] sm:px-6">
-        Data source: NYC 311 Service Requests (Socrata, dataset erm2-nwe9). This
-        preview uses generated sample data — live backend integration is next.
+        <p>
+          Data source: NYC 311 Service Requests (Socrata, dataset erm2-nwe9). This
+          preview uses generated sample data — live backend integration is next.
+        </p>
+        <p className="mt-1.5">
+          Hero photo by{" "}
+          <a
+            href="https://unsplash.com/photos/Nyvq2juw4_o"
+            className="underline underline-offset-2 hover:text-[color:var(--text-secondary)]"
+          >
+            Pedro Lastra
+          </a>{" "}
+          on Unsplash.
+        </p>
       </footer>
     </main>
   );
