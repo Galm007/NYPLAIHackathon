@@ -27,57 +27,7 @@ export async function fetchSuggestions(
   return data.suggestions ?? [];
 }
 
-// export async function fetchReport(lat:number, lng:number): Promise<ReportResponse> {
-//   const res = await fetch(`/api/score`, {
-//     method:"POST",
-//     body:JSON.stringify(
-//       {
-//         lat:lat,
-//         lng:lng
-//       }
-//     )
-//   });
-//   if (!res.ok) {
-//     const body = await res.json().catch(() => ({}));
-//     throw new Error(body.error ?? "Failed to load report");
-//   }
-//   return res.json();
-// }
 const API_BASE_URL = "http://localhost:3001";
-
-function mockReport(lat: number, lng: number): ReportResponse {
-  return {
-    address: null,
-    buildingHealth: {
-      score: 62,
-      band: "fair",
-      counts: { heatHotWater: 2, unsanitaryCondition: 3, plumbing: 1 },
-      radiusMeters: 25,
-      confidence: "normal",
-      confidenceReason: null,
-      bucketScores: { heatHotWater: 55, unsanitaryCondition: 60, plumbing: 70 },
-      bucketConfidence: {},
-    },
-    blockQuality: {
-      score: 78,
-      band: "good",
-      counts: { noise: 40, parking: 25, streetCondition: 10 },
-      radiusMeters: 350,
-      confidence: "normal",
-      confidenceReason: null,
-      bucketScores: { noise: 75, parking: 80, streetCondition: 78 },
-      bucketConfidence: {},
-    },
-    meta: {
-      windowMonths: 24,
-      baselineVersion: "v1",
-      baselineSource: "mock",
-      coord: { lat, lng },
-      cache: { building: "miss", block: "miss" },
-      mock: true,
-    },
-  };
-}
 
 export async function fetchReport(lat: number, lng: number): Promise<ReportResponse> {
   let res: Response;
@@ -88,8 +38,7 @@ export async function fetchReport(lat: number, lng: number): Promise<ReportRespo
       body: JSON.stringify({ lat, lng }),
     });
   } catch {
-    // Backend unreachable (e.g. not running locally) — fall back to mock data.
-    return mockReport(lat, lng);
+    throw new Error("Couldn't reach the backend — is it running?");
   }
 
   if (!res.ok) {
