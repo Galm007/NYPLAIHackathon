@@ -6,7 +6,7 @@ import { MapPanel } from "./MapPanel";
 import { ScorePanelCard } from "./ScorePanelCard";
 import { VerdictBanner } from "./VerdictBanner";
 import { fetchReport, getLatLng } from "@/lib/api";
-import { BuildingIcon, BlockIcon } from "./icons";
+import { BuildingIcon, BlockIcon, SpinnerIcon } from "./icons";
 import type { ReportResponse } from "@/lib/types";
 
 interface LoadedReport {
@@ -75,7 +75,9 @@ export function CompareColumn({
       {error && <p style={{ color: "var(--status-critical)" }}>{error}</p>}
 
       {address && !report && !error && (
-        <div className="h-96 animate-pulse rounded-xl" style={{ background: "var(--gridline)" }} />
+        <div className="flex h-96 items-center justify-center rounded-xl" style={{ background: "var(--gridline)" }}>
+          <SpinnerIcon className="h-8 w-8 text-[color:var(--brand)]" />
+        </div>
       )}
 
       {report && (

@@ -11,6 +11,15 @@ export function CheckCircleIcon({ className }: IconProps) {
   );
 }
 
+export function SpinnerIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={`${base} animate-spin ${className ?? ""}`} aria-hidden>
+      <circle cx="10" cy="10" r="8.5" stroke="currentColor" strokeWidth="1.5" opacity="0.2" />
+      <path d="M18.5 10a8.5 8.5 0 0 0-8.5-8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function AlertTriangleIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 20 20" fill="none" className={`${base} ${className ?? ""}`} aria-hidden>
