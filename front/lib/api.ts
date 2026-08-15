@@ -1,3 +1,4 @@
+import { buildReport } from "./mock-data";
 import type { AutocompleteSuggestion, ReportResponse } from "./types";
 
 // Thin client for the app's own /api/* routes. Today those routes return
@@ -59,15 +60,15 @@ const MOCK_REPORT: ReportResponse = {
 };
 
 const src = "placeholder";
-export async function fetchReport(lat: number, lng: number): Promise<ReportResponse> {
+export async function fetchReport(lat: number, lng: number, address?: string): Promise<ReportResponse> {
   try {
     const res = await fetch(`${src}/api/score`, {
       method: "POST",
       body: JSON.stringify({ lat, lng }),
     });
-    if (!res.ok) return MOCK_REPORT;
+    if (!res.ok) return address ? buildReport(address) : MOCK_REPORT;
     return await res.json();
   } catch {
-    return MOCK_REPORT;
+    return address ? buildReport(address) : MOCK_REPORT;
   }
 }

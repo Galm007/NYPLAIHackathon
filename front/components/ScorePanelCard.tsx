@@ -1,7 +1,8 @@
 import { ComplaintBreakdownBars } from "./ComplaintBreakdownBars";
+import { RecentComplaintsList } from "./RecentComplaintsList";
 import { ScoreMeter } from "./ScoreMeter";
 import { StatusBadge } from "./StatusBadge";
-import type { ScoreBand } from "@/lib/types";
+import type { Complaint, ScoreBand } from "@/lib/types";
 
 export function ScorePanelCard({
   icon,
@@ -12,7 +13,7 @@ export function ScorePanelCard({
 }: {
   icon: React.ReactNode;
   title: string;
-  panel: { score: number; band: ScoreBand; radiusMeters: number; counts: Record<string, number> };
+  panel: { score: number; band: ScoreBand; radiusMeters: number; counts: Record<string, number>; recentComplaints?: Complaint[] };
   colorVar: string;
   description: string;
 }) {
@@ -69,6 +70,15 @@ export function ScorePanelCard({
           score={panel.score}
         />
       </div>
+
+      {panel.recentComplaints !== undefined && (
+        <div>
+          <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
+            Recent complaints
+          </p>
+          <RecentComplaintsList complaints={panel.recentComplaints} />
+        </div>
+      )}
     </div>
   );
 }

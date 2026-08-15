@@ -1,5 +1,14 @@
 export type ScoreBand = "good" | "fair" | "poor";
 
+export type ComplaintStatus = "open" | "in-progress" | "closed";
+
+export interface Complaint {
+  id: string;
+  label: string;
+  date: string; // YYYY-MM-DD
+  status: ComplaintStatus;
+}
+
 export interface ReportResponse {
   buildingHealth: {
     score: number;
@@ -10,6 +19,7 @@ export interface ReportResponse {
       unsanitary: number;
       plumbing: number;
     };
+    recentComplaints?: Complaint[];
   };
   blockQuality: {
     score: number;
@@ -20,6 +30,7 @@ export interface ReportResponse {
       street_condition: number;
     };
     radiusMeters: number;
+    recentComplaints?: Complaint[];
   };
 }
 

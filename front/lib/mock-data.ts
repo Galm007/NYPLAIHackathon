@@ -1,5 +1,5 @@
-import { bandForScore } from "./score";
-import type { ReportResponse } from "./types";
+import { bandForScore, CATEGORY_LABEL } from "./score";
+import type { Complaint, ComplaintStatus, ReportResponse } from "./types";
 
 // ---------------------------------------------------------------------------
 // This module stands in for the real backend (Node/Express + Socrata proxy +
@@ -123,6 +123,38 @@ function titleCaseAddress(raw: string): string {
     .join(" ");
 }
 
+// Generates synthetic Complaint[] from aggregated counts.
+// Each category contributes `count` entries with deterministic dates/statuses.
+function buildComplaints(
+  counts: Record<string, number>,
+  rand: () => number,
+  prefix: string
+): Complaint[] {
+  const STATUSES: ComplaintStatus[] = ["closed", "closed", "closed", "in-progress", "open"];
+  const complaints: Complaint[] = [];
+  // Reference date: 2026-08-15 (today per context)
+  const REF_MS = new Date("2026-08-15").getTime();
+  const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+
+  for (const cat of Object.keys(counts)) {
+    const n = counts[cat];
+    for (let i = 0; i < n; i++) {
+      const daysAgo = Math.floor(rand() * 365);
+      const dateMs = REF_MS - daysAgo * 24 * 60 * 60 * 1000;
+      const date = new Date(dateMs).toISOString().slice(0, 10);
+      const status = STATUSES[Math.floor(rand() * STATUSES.length)];
+      complaints.push({
+        id: `${prefix}-${cat}-${i}`,
+        label: CATEGORY_LABEL[cat] ?? cat,
+        date,
+        status,
+      });
+    }
+  }
+  // Sort newest first
+  return complaints.sort((a, b) => b.date.localeCompare(a.date));
+}
+
 type BuildingCategory = keyof ReportResponse["buildingHealth"]["counts"];
 type BlockCategory = keyof ReportResponse["blockQuality"]["counts"];
 
@@ -211,6 +243,7 @@ export function buildReport(query: string): ReportResponse {
     flavorMultiplier(seedAddress.flavor, "building")
   );
   const buildingScore = scoreFromWeightedTotal(buildingWeighted);
+  const buildingComplaints = buildComplaints(buildingCounts, buildingRand, "b");
 
   const blockRand = mulberry32(hashString(seedAddress.description + "block"));
   const { counts: blockCounts, weightedTotal: blockWeighted } = buildCounts(
@@ -220,6 +253,7 @@ export function buildReport(query: string): ReportResponse {
     flavorMultiplier(seedAddress.flavor, "block")
   );
   const blockScore = scoreFromWeightedTotal(blockWeighted);
+  const blockComplaints = buildComplaints(blockCounts, blockRand, "k");
 
   return {
     buildingHealth: {
@@ -227,12 +261,14 @@ export function buildReport(query: string): ReportResponse {
       band: bandForScore(buildingScore),
       radiusMeters: 25,
       counts: buildingCounts,
+      recentComplaints: buildingComplaints,
     },
     blockQuality: {
       score: blockScore,
       band: bandForScore(blockScore),
       radiusMeters: 400,
       counts: blockCounts,
+      recentComplaints: blockComplaints,
     },
   };
 }
