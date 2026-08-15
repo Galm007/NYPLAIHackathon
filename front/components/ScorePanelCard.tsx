@@ -60,7 +60,12 @@ export function ScorePanelCard({
         <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
           By category
         </p>
-        <ComplaintBreakdownBars counts={panel.complaintCounts} colorVar={colorVar} />
+        <ComplaintBreakdownBars
+          counts={panel.complaintCounts}
+          colorVar={colorVar}
+          panelLabel={panel.label}
+          score={panel.score}
+        />
       </div>
 
       <div>
