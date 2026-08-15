@@ -1,6 +1,17 @@
 import Link from "next/link";
 import { AddressSearch } from "@/components/AddressSearch";
+import { FeaturedCarousel } from "@/components/FeaturedCarousel";
 import { BuildingIcon, BlockIcon, MapPinIcon } from "@/components/icons";
+import { buildReport } from "@/lib/mock-data";
+
+const FEATURED_ADDRESSES = [
+  "456 Park Ave, New York, NY 10022",       // great
+  "123 Ludlow St, New York, NY 10002",      // bad-building
+  "88 Bedford Ave, Brooklyn, NY 11249",     // bad-block
+  "37-11 74th St, Jackson Heights, NY 11372", // bad-both
+  "1 Grand Army Plaza, Brooklyn, NY 11238", // great
+  "980 Anderson Ave, Bronx, NY 10452",      // bad-building
+];
 
 const EXAMPLE_ADDRESSES = [
   "123 Ludlow St, New York, NY 10002",
@@ -31,6 +42,8 @@ const FEATURES = [
 ];
 
 export default function Home() {
+  const featuredReports = FEATURED_ADDRESSES.map(buildReport);
+
   return (
     <main className="flex-1">
       <section className="relative isolate overflow-hidden">
@@ -75,25 +88,6 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-5xl gap-4 px-4 py-10 sm:grid-cols-3 sm:px-6">
-        {FEATURES.map((f) => (
-          <div
-            key={f.title}
-            className="rounded-[var(--radius-lg)] bg-[color:var(--surface-1)] p-6 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5"
-            style={{ boxShadow: "var(--shadow-sm)", border: "1px solid var(--border-hairline)" }}
-          >
-            <span
-              className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)]"
-              style={{ color: `var(${f.colorVar})`, background: `color-mix(in srgb, var(${f.colorVar}) 12%, transparent)` }}
-            >
-              <f.icon className="h-5 w-5" />
-            </span>
-            <h3 className="mt-4 font-semibold text-[color:var(--text-primary)]">{f.title}</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--text-secondary)]">{f.body}</p>
-          </div>
-        ))}
-      </section>
-
       <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-[color:var(--text-muted)]">
           How it works
@@ -115,6 +109,47 @@ export default function Home() {
               <p className="mt-1 text-sm text-[color:var(--text-secondary)]">{s.body}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="mx-auto grid max-w-5xl gap-4 px-4 py-10 sm:grid-cols-3 sm:px-6">
+        {FEATURES.map((f) => (
+          <div
+            key={f.title}
+            className="rounded-[var(--radius-lg)] bg-[color:var(--surface-1)] p-6 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5"
+            style={{ boxShadow: "var(--shadow-sm)", border: "1px solid var(--border-hairline)" }}
+          >
+            <span
+              className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)]"
+              style={{ color: `var(${f.colorVar})`, background: `color-mix(in srgb, var(${f.colorVar}) 12%, transparent)` }}
+            >
+              <f.icon className="h-5 w-5" />
+            </span>
+            <h3 className="mt-4 font-semibold text-[color:var(--text-primary)]">{f.title}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--text-secondary)]">{f.body}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="py-10">
+        <div className="mx-auto mb-5 flex max-w-5xl items-baseline justify-between px-4 sm:px-6">
+          <div>
+            <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">
+              Featured NYC addresses
+            </h2>
+            <p className="mt-0.5 text-sm text-[color:var(--text-muted)]">
+              Sample reports — click any to see the full breakdown.
+            </p>
+          </div>
+          <Link
+            href="/compare"
+            className="text-sm font-medium text-[color:var(--brand)] transition-colors hover:text-[color:var(--brand-strong)]"
+          >
+            Compare addresses →
+          </Link>
+        </div>
+        <div className="px-4 sm:px-6">
+          <FeaturedCarousel reports={featuredReports} />
         </div>
       </section>
 
