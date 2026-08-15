@@ -88,28 +88,6 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="py-10">
-        <div className="mx-auto mb-5 flex max-w-5xl items-baseline justify-between px-4 sm:px-6">
-          <div>
-            <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">
-              Featured NYC addresses
-            </h2>
-            <p className="mt-0.5 text-sm text-[color:var(--text-muted)]">
-              Sample reports — click any to see the full breakdown.
-            </p>
-          </div>
-          <Link
-            href="/compare"
-            className="text-sm font-medium text-[color:var(--brand)] transition-colors hover:text-[color:var(--brand-strong)]"
-          >
-            Compare addresses →
-          </Link>
-        </div>
-        <div className="px-4 sm:px-6">
-          <FeaturedCarousel reports={featuredReports} />
-        </div>
-      </section>
-
       <section className="mx-auto grid max-w-5xl gap-4 px-4 py-10 sm:grid-cols-3 sm:px-6">
         {FEATURES.map((f) => (
           <div
@@ -150,6 +128,28 @@ export default function Home() {
               <p className="mt-1 text-sm text-[color:var(--text-secondary)]">{s.body}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="py-10">
+        <div className="mx-auto mb-5 flex max-w-5xl items-baseline justify-between px-4 sm:px-6">
+          <div>
+            <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">
+              Featured NYC addresses
+            </h2>
+            <p className="mt-0.5 text-sm text-[color:var(--text-muted)]">
+              Sample reports — click any to see the full breakdown.
+            </p>
+          </div>
+          <Link
+            href="/compare"
+            className="text-sm font-medium text-[color:var(--brand)] transition-colors hover:text-[color:var(--brand-strong)]"
+          >
+            Compare addresses →
+          </Link>
+        </div>
+        <div className="px-4 sm:px-6">
+          <FeaturedCarousel reports={featuredReports} />
         </div>
       </section>
 
