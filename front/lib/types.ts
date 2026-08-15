@@ -1,6 +1,15 @@
 export type ScoreBand = "good" | "fair" | "poor";
 export type Confidence = "normal" | "low";
 
+export type ComplaintStatus = "open" | "in-progress" | "closed";
+
+export interface Complaint {
+  id: string;
+  label: string;
+  date: string; // YYYY-MM-DD
+  status: ComplaintStatus;
+}
+
 export type BuildingCounts = {
   heatHotWater: number;
   unsanitaryCondition: number;
@@ -22,6 +31,7 @@ export interface ScoreSection<TCounts extends Record<string, number>> {
   confidenceReason: string | null;
   bucketScores: Partial<Record<keyof TCounts, number>>;
   bucketConfidence: Partial<Record<keyof TCounts, "low">>;
+  recentComplaints?: Complaint[];
 }
 
 export interface ReportMeta {

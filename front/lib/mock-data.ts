@@ -1,5 +1,5 @@
-import { bandForScore } from "./score";
-import type { BlockCounts, BuildingCounts, ReportResponse, ScoreSection } from "./types";
+import { bandForScore, CATEGORY_LABEL } from "./score";
+import type { BlockCounts, BuildingCounts, Complaint, ComplaintStatus, ReportResponse, ScoreSection } from "./types";
 
 // ---------------------------------------------------------------------------
 // This module stands in for the real backend (Node/Express + Socrata proxy +
@@ -205,13 +205,33 @@ function scoreFromWeightedTotal(weightedTotal: number): number {
   return Math.max(0, Math.min(100, Math.round(100 - weightedTotal * SCORE_SCALE)));
 }
 
+function buildComplaints(
+  counts: Record<string, number>,
+  rand: () => number,
+  prefix: string
+): Complaint[] {
+  const STATUSES: ComplaintStatus[] = ["closed", "closed", "closed", "in-progress", "open"];
+  const REF_MS = new Date("2026-08-15").getTime();
+  const complaints: Complaint[] = [];
+  for (const cat of Object.keys(counts)) {
+    for (let i = 0; i < counts[cat]; i++) {
+      const daysAgo = Math.floor(rand() * 365);
+      const date = new Date(REF_MS - daysAgo * 86400000).toISOString().slice(0, 10);
+      const status = STATUSES[Math.floor(rand() * STATUSES.length)];
+      complaints.push({ id: `${prefix}-${cat}-${i}`, label: CATEGORY_LABEL[cat] ?? cat, date, status });
+    }
+  }
+  return complaints.sort((a, b) => b.date.localeCompare(a.date));
+}
+
 function buildScoreSection<K extends string>(
   rand: () => number,
   means: Record<K, number>,
   weights: Record<K, number>,
   mult: number,
   radiusMeters: number,
-  lowConfidenceBuckets: K[] = []
+  lowConfidenceBuckets: K[] = [],
+  prefix = "c"
 ): ScoreSection<Record<K, number>> {
   const { counts, weightedTotal } = buildCounts(rand, means, weights, mult);
   const score = scoreFromWeightedTotal(weightedTotal);
@@ -233,6 +253,7 @@ function buildScoreSection<K extends string>(
     bucketConfidence: Object.fromEntries(
       lowConfidenceBuckets.map((cat) => [cat, "low" as const])
     ) as Partial<Record<K, "low">>,
+    recentComplaints: buildComplaints(counts as Record<string, number>, rand, prefix),
   };
 }
 
@@ -243,7 +264,9 @@ function buildReportForSeed(seedAddress: SeedAddress): ReportResponse {
     BUILDING_CATEGORY_MEAN,
     BUILDING_CATEGORY_WEIGHT,
     flavorMultiplier(seedAddress.flavor, "building"),
-    25
+    25,
+    [],
+    "b"
   );
 
   const blockRand = mulberry32(hashString(seedAddress.description + "block"));
@@ -253,7 +276,8 @@ function buildReportForSeed(seedAddress: SeedAddress): ReportResponse {
     BLOCK_CATEGORY_WEIGHT,
     flavorMultiplier(seedAddress.flavor, "block"),
     350,
-    BLOCK_LOW_CONFIDENCE_BUCKETS
+    BLOCK_LOW_CONFIDENCE_BUCKETS,
+    "k"
   );
 
   return {
