@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AddressSearch } from "@/components/AddressSearch";
 import { FeaturedCarousel } from "@/components/FeaturedCarousel";
 import { BuildingIcon, BlockIcon, MapPinIcon } from "@/components/icons";
-import { buildReport } from "@/lib/mock-data";
+import { buildFeaturedReport } from "@/lib/mock-data";
 
 const FEATURED_ADDRESSES = [
   "456 Park Ave, New York, NY 10022",       // great
@@ -42,7 +42,7 @@ const FEATURES = [
 ];
 
 export default function Home() {
-  const featuredReports = FEATURED_ADDRESSES.map(buildReport);
+  const featuredReports = FEATURED_ADDRESSES.map(buildFeaturedReport);
 
   return (
     <main className="flex-1">

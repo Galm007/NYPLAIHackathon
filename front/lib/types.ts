@@ -1,26 +1,43 @@
 export type ScoreBand = "good" | "fair" | "poor";
+export type Confidence = "normal" | "low";
+
+export type BuildingCounts = {
+  heatHotWater: number;
+  unsanitaryCondition: number;
+  plumbing: number;
+};
+
+export type BlockCounts = {
+  noise: number;
+  parking: number;
+  streetCondition: number;
+};
+
+export interface ScoreSection<TCounts extends Record<string, number>> {
+  score: number;
+  band: ScoreBand;
+  counts: TCounts;
+  radiusMeters: number;
+  confidence: Confidence;
+  confidenceReason: string | null;
+  bucketScores: Partial<Record<keyof TCounts, number>>;
+  bucketConfidence: Partial<Record<keyof TCounts, "low">>;
+}
+
+export interface ReportMeta {
+  windowMonths: number;
+  baselineVersion: string;
+  baselineSource: "mongo" | "file" | "mock";
+  coord: { lat: number; lng: number };
+  cache: { building: "hit" | "miss"; block: "hit" | "miss" };
+  mock?: boolean;
+}
 
 export interface ReportResponse {
-  buildingHealth: {
-    score: number;
-    band: ScoreBand;
-    radiusMeters: number;
-    counts: {
-      heat_hot_water: number;
-      unsanitary: number;
-      plumbing: number;
-    };
-  };
-  blockQuality: {
-    score: number;
-    band: ScoreBand;
-    counts: {
-      noise: number;
-      illegal_parking: number;
-      street_condition: number;
-    };
-    radiusMeters: number;
-  };
+  address: string | null;
+  buildingHealth: ScoreSection<BuildingCounts>;
+  blockQuality: ScoreSection<BlockCounts>;
+  meta: ReportMeta;
 }
 
 export interface AutocompleteSuggestion {

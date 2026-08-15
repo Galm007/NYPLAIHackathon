@@ -1,7 +1,8 @@
 import { ComplaintBreakdownBars } from "./ComplaintBreakdownBars";
 import { ScoreMeter } from "./ScoreMeter";
 import { StatusBadge } from "./StatusBadge";
-import type { ScoreBand } from "@/lib/types";
+import { CONFIDENCE_MESSAGE } from "@/lib/score";
+import type { Confidence, ScoreBand } from "@/lib/types";
 
 export function ScorePanelCard({
   icon,
@@ -12,11 +13,22 @@ export function ScorePanelCard({
 }: {
   icon: React.ReactNode;
   title: string;
-  panel: { score: number; band: ScoreBand; radiusMeters: number; counts: Record<string, number> };
+  panel: {
+    score: number;
+    band: ScoreBand;
+    radiusMeters: number;
+    counts: Record<string, number>;
+    confidence: Confidence;
+    confidenceReason: string | null;
+  };
   colorVar: string;
   description: string;
 }) {
   const totalComplaints = Object.values(panel.counts).reduce((sum, n) => sum + n, 0);
+  const confidenceMessage =
+    panel.confidence === "low" && panel.confidenceReason
+      ? CONFIDENCE_MESSAGE[panel.confidenceReason]
+      : null;
 
   return (
     <div
@@ -42,6 +54,18 @@ export function ScorePanelCard({
         <StatusBadge band={panel.band} />
       </div>
 
+      {confidenceMessage && (
+        <p
+          className="rounded-lg px-3 py-2 text-xs"
+          style={{
+            color: "var(--status-warning)",
+            background: "color-mix(in srgb, var(--status-warning) 12%, transparent)",
+          }}
+        >
+          {confidenceMessage}
+        </p>
+      )}
+
       <div className="flex items-center gap-5">
         <ScoreMeter score={panel.score} band={panel.band} size={104} />
         <div className="flex-1 text-sm text-[color:var(--text-secondary)]">
@@ -63,25 +87,11 @@ export function ScorePanelCard({
           By category
         </p>
         <ComplaintBreakdownBars
-          counts={panel.complaintCounts}
+          counts={panel.counts}
           colorVar={colorVar}
-          panelLabel={panel.label}
+          panelLabel={title}
           score={panel.score}
         />
-      </div>
-
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
-          12-month trend
-        </p>
-        <TrendSparkline data={panel.trend} colorVar={colorVar} />
-      </div>
-
-      <div>
-        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
-          Recent complaints
-        </p>
-        <RecentComplaintsList complaints={panel.recentComplaints} />
       </div>
     </div>
   );

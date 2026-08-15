@@ -2,12 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import { FeaturedCard } from "./FeaturedCard";
-import type { ReportResponse } from "@/lib/types";
+import type { FeaturedReport } from "@/lib/mock-data";
 
 const SCROLL_SPEED = 0.18; // px per animation frame (~11px/s at 60fps)
 const RESUME_DELAY = 2000; // ms after interaction stops before auto-scroll resumes
 
-export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
+export function FeaturedCarousel({ reports }: { reports: FeaturedReport[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const paused = useRef(false);
   const rafRef = useRef<number>(0);
@@ -87,7 +87,7 @@ export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
           key={`${report.address}-${i}`}
           className="w-[340px] flex-shrink-0"
         >
-          <FeaturedCard report={report} />
+          <FeaturedCard address={report.address} borough={report.borough} data={report.data} />
         </div>
       ))}
     </div>

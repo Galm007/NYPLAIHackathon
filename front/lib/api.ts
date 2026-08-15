@@ -43,31 +43,62 @@ export async function fetchSuggestions(
 //   }
 //   return res.json();
 // }
-const MOCK_REPORT: ReportResponse = {
-  buildingHealth: {
-    score: 62,
-    band: "fair",
-    radiusMeters: 25,
-    counts: { heat_hot_water: 2, unsanitary: 3, plumbing: 1 },
-  },
-  blockQuality: {
-    score: 78,
-    band: "good",
-    radiusMeters: 400,
-    counts: { noise: 4, illegal_parking: 6, street_condition: 2 },
-  },
-};
+const API_BASE_URL = "http://localhost:3001";
 
-const src = "placeholder";
+function mockReport(lat: number, lng: number): ReportResponse {
+  return {
+    address: null,
+    buildingHealth: {
+      score: 62,
+      band: "fair",
+      counts: { heatHotWater: 2, unsanitaryCondition: 3, plumbing: 1 },
+      radiusMeters: 25,
+      confidence: "normal",
+      confidenceReason: null,
+      bucketScores: { heatHotWater: 55, unsanitaryCondition: 60, plumbing: 70 },
+      bucketConfidence: {},
+    },
+    blockQuality: {
+      score: 78,
+      band: "good",
+      counts: { noise: 40, parking: 25, streetCondition: 10 },
+      radiusMeters: 350,
+      confidence: "normal",
+      confidenceReason: null,
+      bucketScores: { noise: 75, parking: 80, streetCondition: 78 },
+      bucketConfidence: {},
+    },
+    meta: {
+      windowMonths: 24,
+      baselineVersion: "v1",
+      baselineSource: "mock",
+      coord: { lat, lng },
+      cache: { building: "miss", block: "miss" },
+      mock: true,
+    },
+  };
+}
+
 export async function fetchReport(lat: number, lng: number): Promise<ReportResponse> {
+  let res: Response;
   try {
-    const res = await fetch(`${src}/api/score`, {
+    res = await fetch(`${API_BASE_URL}/api/score`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lat, lng }),
     });
-    if (!res.ok) return MOCK_REPORT;
-    return await res.json();
   } catch {
-    return MOCK_REPORT;
+    // Backend unreachable (e.g. not running locally) — fall back to mock data.
+    return mockReport(lat, lng);
   }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 503) {
+      throw new Error("NYC's data service is unavailable right now — try again shortly.");
+    }
+    throw new Error(body.details ?? body.error ?? "Failed to load report");
+  }
+
+  return res.json();
 }

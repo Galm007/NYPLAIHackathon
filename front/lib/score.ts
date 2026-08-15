@@ -30,10 +30,19 @@ export const BAND_VAR: Record<ScoreBand, string> = {
 };
 
 export const CATEGORY_LABEL: Record<string, string> = {
-  heat_hot_water: "Heat / Hot Water",
-  unsanitary: "Unsanitary Condition",
+  heatHotWater: "Heat / Hot Water",
+  unsanitaryCondition: "Unsanitary Condition",
   plumbing: "Plumbing",
   noise: "Noise",
-  illegal_parking: "Illegal Parking",
-  street_condition: "Street Condition",
+  parking: "Illegal Parking",
+  streetCondition: "Street Condition",
+};
+
+// Suggested UI copy per confidenceReason — see API reference §Confidence.
+// "stale_baseline_radius" is a backend misconfiguration and intentionally
+// has no user-facing message; surface it to the team instead.
+export const CONFIDENCE_MESSAGE: Record<string, string> = {
+  no_complaints_found:
+    "No records found at this location — this may not be a building address.",
+  no_baseline: "Score is not comparable to the rest of the city.",
 };

@@ -1,5 +1,5 @@
 import { bandForScore } from "./score";
-import type { ReportResponse } from "./types";
+import type { BlockCounts, BuildingCounts, ReportResponse, ScoreSection } from "./types";
 
 // ---------------------------------------------------------------------------
 // This module stands in for the real backend (Node/Express + Socrata proxy +
@@ -123,34 +123,39 @@ function titleCaseAddress(raw: string): string {
     .join(" ");
 }
 
-type BuildingCategory = keyof ReportResponse["buildingHealth"]["counts"];
-type BlockCategory = keyof ReportResponse["blockQuality"]["counts"];
+type BuildingCategory = keyof BuildingCounts;
+type BlockCategory = keyof BlockCounts;
 
 // Mean complaint count at flavor multiplier 1.0 ("average"), per category,
 // tuned so an average building and an average block both land in the
 // "Fair" band and a "bad" flavor lands in "Poor" — see the scoring
 // calibration below.
 const BUILDING_CATEGORY_MEAN: Record<BuildingCategory, number> = {
-  heat_hot_water: 3,
-  unsanitary: 2,
+  heatHotWater: 3,
+  unsanitaryCondition: 2,
   plumbing: 3,
 };
 const BUILDING_CATEGORY_WEIGHT: Record<BuildingCategory, number> = {
-  heat_hot_water: 1.3,
-  unsanitary: 1.5,
+  heatHotWater: 1.3,
+  unsanitaryCondition: 1.5,
   plumbing: 1.0,
 };
 
 const BLOCK_CATEGORY_MEAN: Record<BlockCategory, number> = {
   noise: 6,
-  illegal_parking: 7,
-  street_condition: 5,
+  parking: 7,
+  streetCondition: 5,
 };
 const BLOCK_CATEGORY_WEIGHT: Record<BlockCategory, number> = {
   noise: 0.6,
-  illegal_parking: 0.5,
-  street_condition: 0.8,
+  parking: 0.5,
+  streetCondition: 0.8,
 };
+
+// The real API's streetCondition bucket is always flagged low-confidence
+// (25.6% of Street Condition 311 records have no coordinates) — mirror that
+// here so the mock behaves like the live backend.
+const BLOCK_LOW_CONFIDENCE_BUCKETS: BlockCategory[] = ["streetCondition"];
 
 function flavorMultiplier(
   flavor: SeedAddress["flavor"],
@@ -200,39 +205,90 @@ function scoreFromWeightedTotal(weightedTotal: number): number {
   return Math.max(0, Math.min(100, Math.round(100 - weightedTotal * SCORE_SCALE)));
 }
 
-export function buildReport(query: string): ReportResponse {
-  const seedAddress = resolveAddress(query);
+function buildScoreSection<K extends string>(
+  rand: () => number,
+  means: Record<K, number>,
+  weights: Record<K, number>,
+  mult: number,
+  radiusMeters: number,
+  lowConfidenceBuckets: K[] = []
+): ScoreSection<Record<K, number>> {
+  const { counts, weightedTotal } = buildCounts(rand, means, weights, mult);
+  const score = scoreFromWeightedTotal(weightedTotal);
+  const allZero = Object.values<number>(counts).every((n) => n === 0);
 
+  const bucketScores = {} as Record<K, number>;
+  for (const cat of Object.keys(means) as K[]) {
+    bucketScores[cat] = scoreFromWeightedTotal(counts[cat] * weights[cat]);
+  }
+
+  return {
+    score,
+    band: bandForScore(score),
+    counts,
+    radiusMeters,
+    confidence: allZero ? "low" : "normal",
+    confidenceReason: allZero ? "no_complaints_found" : null,
+    bucketScores,
+    bucketConfidence: Object.fromEntries(
+      lowConfidenceBuckets.map((cat) => [cat, "low" as const])
+    ) as Partial<Record<K, "low">>,
+  };
+}
+
+function buildReportForSeed(seedAddress: SeedAddress): ReportResponse {
   const buildingRand = mulberry32(hashString(seedAddress.description + "building"));
-  const { counts: buildingCounts, weightedTotal: buildingWeighted } = buildCounts(
+  const buildingHealth = buildScoreSection(
     buildingRand,
     BUILDING_CATEGORY_MEAN,
     BUILDING_CATEGORY_WEIGHT,
-    flavorMultiplier(seedAddress.flavor, "building")
+    flavorMultiplier(seedAddress.flavor, "building"),
+    25
   );
-  const buildingScore = scoreFromWeightedTotal(buildingWeighted);
 
   const blockRand = mulberry32(hashString(seedAddress.description + "block"));
-  const { counts: blockCounts, weightedTotal: blockWeighted } = buildCounts(
+  const blockQuality = buildScoreSection(
     blockRand,
     BLOCK_CATEGORY_MEAN,
     BLOCK_CATEGORY_WEIGHT,
-    flavorMultiplier(seedAddress.flavor, "block")
+    flavorMultiplier(seedAddress.flavor, "block"),
+    350,
+    BLOCK_LOW_CONFIDENCE_BUCKETS
   );
-  const blockScore = scoreFromWeightedTotal(blockWeighted);
 
   return {
-    buildingHealth: {
-      score: buildingScore,
-      band: bandForScore(buildingScore),
-      radiusMeters: 25,
-      counts: buildingCounts,
+    address: null,
+    buildingHealth,
+    blockQuality,
+    meta: {
+      windowMonths: 24,
+      baselineVersion: "v1",
+      baselineSource: "mock",
+      coord: { lat: seedAddress.lat, lng: seedAddress.lng },
+      cache: { building: "miss", block: "miss" },
+      mock: true,
     },
-    blockQuality: {
-      score: blockScore,
-      band: bandForScore(blockScore),
-      radiusMeters: 400,
-      counts: blockCounts,
-    },
+  };
+}
+
+export function buildReport(query: string): ReportResponse {
+  return buildReportForSeed(resolveAddress(query));
+}
+
+export interface FeaturedReport {
+  address: string;
+  borough: string;
+  data: ReportResponse;
+}
+
+// The live API never returns an address (it doesn't geocode), so callers
+// that need one for display (e.g. the homepage's featured cards) pull it
+// from the same seed data used to generate the mock scores.
+export function buildFeaturedReport(query: string): FeaturedReport {
+  const seedAddress = resolveAddress(query);
+  return {
+    address: seedAddress.description,
+    borough: seedAddress.borough,
+    data: buildReportForSeed(seedAddress),
   };
 }

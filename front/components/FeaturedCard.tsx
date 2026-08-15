@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BAND_LABEL, BAND_VAR, BAND_VERDICT, CATEGORY_LABEL } from "@/lib/score";
+import { BAND_LABEL, BAND_VAR, BAND_VERDICT, CATEGORY_LABEL, overallBand } from "@/lib/score";
 import type { ReportResponse } from "@/lib/types";
 
 function ScoreBlob({ score, colorVar }: { score: number; colorVar: string }) {
@@ -45,23 +45,25 @@ function PanelRow({
   );
 }
 
-export function FeaturedCard({ report }: { report: ReportResponse }) {
-  const { buildingHealth, blockQuality, address, borough } = report;
+export function FeaturedCard({
+  address,
+  borough,
+  data,
+}: {
+  address: string;
+  borough: string;
+  data: ReportResponse;
+}) {
+  const { buildingHealth, blockQuality } = data;
 
-  // Overall: worst of the two bands
-  const bandOrder = ["good", "warning", "serious", "critical"] as const;
-  const worstBand =
-    bandOrder[
-      Math.max(bandOrder.indexOf(buildingHealth.band), bandOrder.indexOf(blockQuality.band))
-    ];
+  const worstBand = overallBand(buildingHealth.band, blockQuality.band);
   const accentColor = `var(${BAND_VAR[worstBand]})`;
 
-  const topBuildingCat = Object.entries(buildingHealth.complaintCounts).sort(
-    ([, a], [, b]) => b - a
-  )[0]?.[0];
-  const topBlockCat = Object.entries(blockQuality.complaintCounts).sort(
-    ([, a], [, b]) => b - a
-  )[0]?.[0];
+  const topBuildingCat = Object.entries(buildingHealth.counts).sort(([, a], [, b]) => b - a)[0]?.[0];
+  const topBlockCat = Object.entries(blockQuality.counts).sort(([, a], [, b]) => b - a)[0]?.[0];
+
+  const buildingTotal = Object.values(buildingHealth.counts).reduce((sum, n) => sum + n, 0);
+  const blockTotal = Object.values(blockQuality.counts).reduce((sum, n) => sum + n, 0);
 
   const streetAddress = address.split(",")[0];
   const restAddress = address.split(",").slice(1).join(",").trim();
@@ -113,14 +115,14 @@ export function FeaturedCard({ report }: { report: ReportResponse }) {
           <PanelRow
             label="Building Health"
             score={buildingHealth.score}
-            total={buildingHealth.totalComplaints}
+            total={buildingTotal}
             topCategory={topBuildingCat ? (CATEGORY_LABEL[topBuildingCat] ?? null) : null}
             colorVar="--series-building"
           />
           <PanelRow
             label="Block Quality"
             score={blockQuality.score}
-            total={blockQuality.totalComplaints}
+            total={blockTotal}
             topCategory={topBlockCat ? (CATEGORY_LABEL[topBlockCat] ?? null) : null}
             colorVar="--series-block"
           />
