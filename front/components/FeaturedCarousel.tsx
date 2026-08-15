@@ -4,10 +4,16 @@ import { useEffect, useRef } from "react";
 import { FeaturedCard } from "./FeaturedCard";
 import type { ReportResponse } from "@/lib/types";
 
+export interface FeaturedEntry {
+  address: string;
+  borough: string;
+  report: ReportResponse;
+}
+
 const SCROLL_SPEED = 0.18; // px per animation frame (~11px/s at 60fps)
 const RESUME_DELAY = 2000; // ms after interaction stops before auto-scroll resumes
 
-export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
+export function FeaturedCarousel({ entries }: { entries: FeaturedEntry[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const paused = useRef(false);
   const rafRef = useRef<number>(0);
@@ -16,9 +22,9 @@ export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
   // integers on read, so `el.scrollLeft += 0.18` would never accumulate.
   const scrollPos = useRef(0);
 
-  // Duplicate cards so we can loop seamlessly: when we reach the midpoint,
+  // Duplicate entries so we can loop seamlessly: when we reach the midpoint,
   // silently snap back to position 0 (which looks identical).
-  const looped = [...reports, ...reports];
+  const looped = [...entries, ...entries];
 
   useEffect(() => {
     const el = containerRef.current;
@@ -57,12 +63,10 @@ export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
     // Sync tracked position when user scrolls manually so resume is seamless
     el.addEventListener("scroll", () => { scrollPos.current = el.scrollLeft; }, { passive: true });
 
-    // Resume after wheel stops (wheel has no "end" event — schedule on each tick)
     function onWheel() {
       pause();
       scheduleResume();
     }
-    el.removeEventListener("wheel", pause);
     el.addEventListener("wheel", onWheel, { passive: true });
 
     return () => {
@@ -82,12 +86,9 @@ export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
         cursor: "grab",
       }}
     >
-      {looped.map((report, i) => (
-        <div
-          key={`${report.address}-${i}`}
-          className="w-[340px] flex-shrink-0"
-        >
-          <FeaturedCard report={report} />
+      {looped.map((entry, i) => (
+        <div key={`${entry.address}-${i}`} className="w-[340px] flex-shrink-0">
+          <FeaturedCard report={entry.report} address={entry.address} borough={entry.borough} />
         </div>
       ))}
     </div>
