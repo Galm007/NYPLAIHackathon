@@ -88,8 +88,8 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        <div className="mb-5 flex items-baseline justify-between">
+      <section className="py-10">
+        <div className="mx-auto mb-5 flex max-w-5xl items-baseline justify-between px-4 sm:px-6">
           <div>
             <h2 className="text-lg font-semibold text-[color:var(--text-primary)]">
               Featured NYC addresses
@@ -105,7 +105,9 @@ export default function Home() {
             Compare addresses →
           </Link>
         </div>
-        <FeaturedCarousel reports={featuredReports} />
+        <div className="px-4 sm:px-6">
+          <FeaturedCarousel reports={featuredReports} />
+        </div>
       </section>
 
       <section className="mx-auto grid max-w-5xl gap-4 px-4 py-10 sm:grid-cols-3 sm:px-6">
