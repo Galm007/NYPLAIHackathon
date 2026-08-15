@@ -18,16 +18,18 @@ export function VerdictBanner({
 
   return (
     <div
-      className="rounded-xl border p-5"
+      className="rounded-[var(--radius-lg)] p-6"
       style={{
-        borderColor: "var(--border-hairline)",
-        background: `color-mix(in srgb, ${color} 6%, var(--surface-1))`,
+        boxShadow: "var(--shadow-md)",
+        border: "1px solid var(--border-hairline)",
+        borderLeft: `3px solid ${color}`,
+        background: `color-mix(in srgb, ${color} 5%, var(--surface-1))`,
       }}
     >
-      <p className="text-xs text-[color:var(--text-muted)]">{borough}</p>
-      <h1 className="mt-0.5 text-lg font-semibold text-[color:var(--text-primary)]">{address}</h1>
+      <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">{borough}</p>
+      <h1 className="mt-1 text-xl font-semibold text-[color:var(--text-primary)]">{address}</h1>
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <span className="text-2xl font-semibold" style={{ color }}>
+        <span className="text-2xl font-bold tracking-tight" style={{ color }}>
           {BAND_VERDICT[band]}
         </span>
         <StatusBadge band={band} />
