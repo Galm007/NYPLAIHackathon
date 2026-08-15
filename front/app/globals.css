@@ -60,3 +60,8 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
 }
+
+/* Hide scrollbar for carousel while keeping it scrollable */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

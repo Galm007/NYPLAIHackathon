@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AddressSearch } from "@/components/AddressSearch";
-import { FeaturedCard } from "@/components/FeaturedCard";
+import { FeaturedCarousel } from "@/components/FeaturedCarousel";
 import { BuildingIcon, BlockIcon, MapPinIcon } from "@/components/icons";
 import { buildReport } from "@/lib/mock-data";
 
@@ -105,11 +105,7 @@ export default function Home() {
             Compare addresses →
           </Link>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {featuredReports.map((report) => (
-            <FeaturedCard key={report.address} report={report} />
-          ))}
-        </div>
+        <FeaturedCarousel reports={featuredReports} />
       </section>
 
       <section className="mx-auto grid max-w-5xl gap-4 px-4 py-10 sm:grid-cols-3 sm:px-6">
