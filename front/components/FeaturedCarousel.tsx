@@ -12,6 +12,9 @@ export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
   const paused = useRef(false);
   const rafRef = useRef<number>(0);
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Track fractional scroll position separately — browsers round scrollLeft to
+  // integers on read, so `el.scrollLeft += 0.18` would never accumulate.
+  const scrollPos = useRef(0);
 
   // Duplicate cards so we can loop seamlessly: when we reach the midpoint,
   // silently snap back to position 0 (which looks identical).
@@ -23,11 +26,12 @@ export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
 
     function tick() {
       if (!paused.current && el) {
-        el.scrollLeft += SCROLL_SPEED;
+        scrollPos.current += SCROLL_SPEED;
         // Seamless loop: halfway through the duplicated list = back to start
-        if (el.scrollLeft >= el.scrollWidth / 2) {
-          el.scrollLeft = 0;
+        if (scrollPos.current >= el.scrollWidth / 2) {
+          scrollPos.current = 0;
         }
+        el.scrollLeft = scrollPos.current;
       }
       rafRef.current = requestAnimationFrame(tick);
     }
@@ -50,7 +54,8 @@ export function FeaturedCarousel({ reports }: { reports: ReportResponse[] }) {
     el.addEventListener("mouseleave", scheduleResume);
     el.addEventListener("touchstart", pause, { passive: true });
     el.addEventListener("touchend", scheduleResume, { passive: true });
-    el.addEventListener("wheel", pause, { passive: true });
+    // Sync tracked position when user scrolls manually so resume is seamless
+    el.addEventListener("scroll", () => { scrollPos.current = el.scrollLeft; }, { passive: true });
 
     // Resume after wheel stops (wheel has no "end" event — schedule on each tick)
     function onWheel() {

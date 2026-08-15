@@ -88,25 +88,6 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-5xl gap-4 px-4 py-10 sm:grid-cols-3 sm:px-6">
-        {FEATURES.map((f) => (
-          <div
-            key={f.title}
-            className="rounded-[var(--radius-lg)] bg-[color:var(--surface-1)] p-6 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5"
-            style={{ boxShadow: "var(--shadow-sm)", border: "1px solid var(--border-hairline)" }}
-          >
-            <span
-              className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)]"
-              style={{ color: `var(${f.colorVar})`, background: `color-mix(in srgb, var(${f.colorVar}) 12%, transparent)` }}
-            >
-              <f.icon className="h-5 w-5" />
-            </span>
-            <h3 className="mt-4 font-semibold text-[color:var(--text-primary)]">{f.title}</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--text-secondary)]">{f.body}</p>
-          </div>
-        ))}
-      </section>
-
       <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-[color:var(--text-muted)]">
           How it works
@@ -129,6 +110,25 @@ export default function Home() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="mx-auto grid max-w-5xl gap-4 px-4 py-10 sm:grid-cols-3 sm:px-6">
+        {FEATURES.map((f) => (
+          <div
+            key={f.title}
+            className="rounded-[var(--radius-lg)] bg-[color:var(--surface-1)] p-6 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5"
+            style={{ boxShadow: "var(--shadow-sm)", border: "1px solid var(--border-hairline)" }}
+          >
+            <span
+              className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)]"
+              style={{ color: `var(${f.colorVar})`, background: `color-mix(in srgb, var(${f.colorVar}) 12%, transparent)` }}
+            >
+              <f.icon className="h-5 w-5" />
+            </span>
+            <h3 className="mt-4 font-semibold text-[color:var(--text-primary)]">{f.title}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--text-secondary)]">{f.body}</p>
+          </div>
+        ))}
       </section>
 
       <section className="py-10">
