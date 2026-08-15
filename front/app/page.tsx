@@ -1,16 +1,16 @@
 import Link from "next/link";
 import { AddressSearch } from "@/components/AddressSearch";
-import { FeaturedCarousel } from "@/components/FeaturedCarousel";
+import { FeaturedCarousel, type FeaturedEntry } from "@/components/FeaturedCarousel";
 import { BuildingIcon, BlockIcon, MapPinIcon } from "@/components/icons";
 import { buildReport } from "@/lib/mock-data";
 
-const FEATURED_ADDRESSES = [
-  "456 Park Ave, New York, NY 10022",       // great
-  "123 Ludlow St, New York, NY 10002",      // bad-building
-  "88 Bedford Ave, Brooklyn, NY 11249",     // bad-block
-  "37-11 74th St, Jackson Heights, NY 11372", // bad-both
-  "1 Grand Army Plaza, Brooklyn, NY 11238", // great
-  "980 Anderson Ave, Bronx, NY 10452",      // bad-building
+const FEATURED_ADDRESSES: { address: string; borough: string }[] = [
+  { address: "456 Park Ave, New York, NY 10022",          borough: "Manhattan" },
+  { address: "123 Ludlow St, New York, NY 10002",         borough: "Manhattan" },
+  { address: "88 Bedford Ave, Brooklyn, NY 11249",        borough: "Brooklyn"  },
+  { address: "37-11 74th St, Jackson Heights, NY 11372",  borough: "Queens"    },
+  { address: "1 Grand Army Plaza, Brooklyn, NY 11238",    borough: "Brooklyn"  },
+  { address: "980 Anderson Ave, Bronx, NY 10452",         borough: "Bronx"     },
 ];
 
 const EXAMPLE_ADDRESSES = [
@@ -42,7 +42,11 @@ const FEATURES = [
 ];
 
 export default function Home() {
-  const featuredReports = FEATURED_ADDRESSES.map(buildReport);
+  const featuredEntries: FeaturedEntry[] = FEATURED_ADDRESSES.map(({ address, borough }) => ({
+    address,
+    borough,
+    report: buildReport(address),
+  }));
 
   return (
     <main className="flex-1">
@@ -149,7 +153,7 @@ export default function Home() {
           </Link>
         </div>
         <div className="px-4 sm:px-6">
-          <FeaturedCarousel reports={featuredReports} />
+          <FeaturedCarousel entries={featuredEntries} />
         </div>
       </section>
 

@@ -63,25 +63,11 @@ export function ScorePanelCard({
           By category
         </p>
         <ComplaintBreakdownBars
-          counts={panel.complaintCounts}
+          counts={panel.counts}
           colorVar={colorVar}
-          panelLabel={panel.label}
+          panelLabel={title}
           score={panel.score}
         />
-      </div>
-
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
-          12-month trend
-        </p>
-        <TrendSparkline data={panel.trend} colorVar={colorVar} />
-      </div>
-
-      <div>
-        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
-          Recent complaints
-        </p>
-        <RecentComplaintsList complaints={panel.recentComplaints} />
       </div>
     </div>
   );
