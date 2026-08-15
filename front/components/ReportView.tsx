@@ -86,8 +86,16 @@ export function ReportView() {
         <span className="text-[color:var(--text-secondary)]">Report</span>
       </nav>
 
-      <div className="mb-6 max-w-md">
-        <AddressSearch key={report.address} size="sm" initialValue={report.address} />
+      <div className="mb-6 flex items-center gap-3">
+        <div className="min-w-0 flex-1 max-w-md">
+          <AddressSearch key={report.address} size="sm" initialValue={report.address} />
+        </div>
+        <Link
+          href={`/compare?a=${encodeURIComponent(report.address)}`}
+          className="shrink-0 rounded-full bg-[color:var(--brand)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[color:var(--brand-strong)]"
+        >
+          Compare →
+        </Link>
       </div>
 
       <VerdictBanner
@@ -122,14 +130,6 @@ export function ReportView() {
         />
       </div>
 
-      <div className="mt-6 flex items-center justify-end border-t pt-4 text-xs text-[color:var(--text-muted)]" style={{ borderColor: "var(--border-hairline)" }}>
-        <Link
-          href={`/compare?a=${encodeURIComponent(report.address)}`}
-          className="font-medium text-[color:var(--text-secondary)] underline-offset-2 hover:underline"
-        >
-          Compare with another address →
-        </Link>
-      </div>
     </div>
   );
 }

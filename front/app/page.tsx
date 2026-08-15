@@ -5,12 +5,12 @@ import { BuildingIcon, BlockIcon, MapPinIcon } from "@/components/icons";
 import { buildFeaturedReport } from "@/lib/mock-data";
 
 const FEATURED_ADDRESSES = [
-  "456 Park Ave, New York, NY 10022",       // great
-  "123 Ludlow St, New York, NY 10002",      // bad-building
-  "88 Bedford Ave, Brooklyn, NY 11249",     // bad-block
-  "37-11 74th St, Jackson Heights, NY 11372", // bad-both
-  "1 Grand Army Plaza, Brooklyn, NY 11238", // great
-  "980 Anderson Ave, Bronx, NY 10452",      // bad-building
+  "456 Park Ave, New York, NY 10022",
+  "123 Ludlow St, New York, NY 10002",
+  "88 Bedford Ave, Brooklyn, NY 11249",
+  "37-11 74th St, Jackson Heights, NY 11372",
+  "1 Grand Army Plaza, Brooklyn, NY 11238",
+  "980 Anderson Ave, Bronx, NY 10452",
 ];
 
 const EXAMPLE_ADDRESSES = [

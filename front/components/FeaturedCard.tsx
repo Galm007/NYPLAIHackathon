@@ -3,11 +3,10 @@ import { BAND_LABEL, BAND_VAR, BAND_VERDICT, CATEGORY_LABEL, overallBand } from 
 import type { ReportResponse } from "@/lib/types";
 
 function ScoreBlob({ score, colorVar }: { score: number; colorVar: string }) {
-  const color = `var(${colorVar})`;
   return (
     <span
       className="inline-flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold tabular-nums text-white"
-      style={{ background: color }}
+      style={{ background: `var(${colorVar})` }}
     >
       {score}
     </span>
@@ -56,8 +55,8 @@ export function FeaturedCard({
 }) {
   const { buildingHealth, blockQuality } = data;
 
-  const worstBand = overallBand(buildingHealth.band, blockQuality.band);
-  const accentColor = `var(${BAND_VAR[worstBand]})`;
+  const band = overallBand(buildingHealth.band, blockQuality.band);
+  const accentColor = `var(${BAND_VAR[band]})`;
 
   const topBuildingCat = Object.entries(buildingHealth.counts).sort(([, a], [, b]) => b - a)[0]?.[0];
   const topBlockCat = Object.entries(blockQuality.counts).sort(([, a], [, b]) => b - a)[0]?.[0];
@@ -74,21 +73,16 @@ export function FeaturedCard({
       className="card-pop group flex flex-col overflow-hidden rounded-[var(--radius-lg)] bg-[color:var(--surface-1)]"
       style={{ border: "1px solid var(--border-hairline)" }}
     >
-      {/* Colored top accent bar */}
       <div className="h-1.5 w-full" style={{ background: accentColor }} />
 
       <div className="flex flex-col gap-4 p-5">
-        {/* Header: verdict + badge */}
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p
-              className="text-lg font-bold leading-tight tracking-tight"
-              style={{ color: accentColor }}
-            >
-              {BAND_VERDICT[worstBand]}
+            <p className="text-lg font-bold leading-tight tracking-tight" style={{ color: accentColor }}>
+              {BAND_VERDICT[band]}
             </p>
             <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-[color:var(--text-muted)]">
-              {BAND_LABEL[worstBand]}
+              {BAND_LABEL[band]}
             </p>
           </div>
           <span
@@ -102,15 +96,11 @@ export function FeaturedCard({
           </span>
         </div>
 
-        {/* Address */}
         <div className="border-t pt-3" style={{ borderColor: "var(--gridline)" }}>
-          <p className="font-semibold text-[color:var(--text-primary)] leading-snug">
-            {streetAddress}
-          </p>
+          <p className="font-semibold text-[color:var(--text-primary)] leading-snug">{streetAddress}</p>
           <p className="text-xs text-[color:var(--text-muted)] mt-0.5">{restAddress}</p>
         </div>
 
-        {/* Score panels */}
         <div className="flex flex-col gap-3">
           <PanelRow
             label="Building Health"
@@ -128,7 +118,6 @@ export function FeaturedCard({
           />
         </div>
 
-        {/* CTA */}
         <div
           className="border-t pt-3 text-xs font-semibold text-[color:var(--brand)] transition-colors group-hover:text-[color:var(--brand-strong)]"
           style={{ borderColor: "var(--gridline)" }}

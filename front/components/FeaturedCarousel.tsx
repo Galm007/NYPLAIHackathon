@@ -16,7 +16,7 @@ export function FeaturedCarousel({ reports }: { reports: FeaturedReport[] }) {
   // integers on read, so `el.scrollLeft += 0.18` would never accumulate.
   const scrollPos = useRef(0);
 
-  // Duplicate cards so we can loop seamlessly: when we reach the midpoint,
+  // Duplicate entries so we can loop seamlessly: when we reach the midpoint,
   // silently snap back to position 0 (which looks identical).
   const looped = [...reports, ...reports];
 
@@ -57,12 +57,10 @@ export function FeaturedCarousel({ reports }: { reports: FeaturedReport[] }) {
     // Sync tracked position when user scrolls manually so resume is seamless
     el.addEventListener("scroll", () => { scrollPos.current = el.scrollLeft; }, { passive: true });
 
-    // Resume after wheel stops (wheel has no "end" event — schedule on each tick)
     function onWheel() {
       pause();
       scheduleResume();
     }
-    el.removeEventListener("wheel", pause);
     el.addEventListener("wheel", onWheel, { passive: true });
 
     return () => {
