@@ -99,6 +99,11 @@ underweight noise relative to plumbing.
 **CONTRACT CHANGE (post-freeze): explanationSource field + new /api/explanation
 endpoint added below. Flag to Person 2 — this affects frontend swap-in-place UI.**
 
+**CONTRACT CHANGE (post-freeze, M7): AUTH IS NOW REQUIRED on all three data
+endpoints.** They return 401 without `Authorization: Bearer <accessToken>`.
+Response BODIES are unchanged — no field added, removed, or renamed. See the
+Authentication section below and documentation/m7-auth.md.
+
 POST /api/score
   body: { lat: number, lng: number }
   returns: {
@@ -133,8 +138,55 @@ GET /api/complaints?lat=&lng=&radius=
 
 GET /health
   returns: 200 OK   // for deploy checks + keep-warm pings
+  PUBLIC — deliberately not authenticated. A 401 here reads to a host as a
+  failed deploy, and it exposes only "the process is up".
 
 band = "good" | "fair" | "poor"
+
+## Authentication (NEW SCOPE, M7 — not in the original build order)
+
+Username + password, JWT bearer tokens, tenant/landlord roles. Full rationale in
+documentation/m7-auth.md; this section is the spec-level summary.
+
+POST /api/auth/register  body: { username, password, role }   // role: tenant|landlord
+POST /api/auth/login     body: { username, password }
+POST /api/auth/refresh   body: { refreshToken }
+POST /api/auth/logout    header: Authorization: Bearer <accessToken>
+GET  /api/auth/me        header: Authorization: Bearer <accessToken>
+
+The first three return:
+  { accessToken, refreshToken, tokenType: "Bearer", expiresIn, expiresAt,
+    user: { id, username, role, createdAt } }
+
+Design rules (do not change these without updating this file):
+
+1. **Access token is a 7-day JWT that is ALSO checked against a live session
+   document.** Every token carries the `sid` of its session; requireAuth
+   verifies that session still exists. This is what makes logout real — a
+   stateless 7-day JWT cannot be revoked. Costs one indexed findOne per
+   authenticated request, deliberately.
+2. **Refresh token is opaque random bytes, NOT a JWT**, 30-day TTL, and only a
+   SHA-256 hash is stored. It ROTATES on every refresh (single-use).
+3. **Passwords use node:crypto scrypt**, not bcrypt — no native build step, which
+   matters on the alpine/musl image. Self-describing hash format.
+4. **Login returns one error for both unknown-user and wrong-password**, and
+   spends the same CPU in both branches (dummy-hash verify). Both halves are
+   required; the response alone is not enough, timing leaks it too.
+5. **`algorithms` is pinned on jwt.verify.** Without it an `alg: none` token is
+   accepted.
+6. **Role is required at registration with no default**, and is carried in the
+   token. Nothing branches on it yet.
+7. **JWT_SECRET has no fallback** and the app exits at boot without it, or
+   without MONGODB_URI.
+
+Collections: `users` (username unique) and `auth_sessions` (TTL on expiresAt,
+unique refreshTokenHash).
+
+**Mongo is no longer optional.** It was an optimisation for the cache — every
+cache path still degrades to "miss" — but auth needs a real user store, so
+providers/mongo.js now has BOTH `getDb()` (returns null, for the cache) and
+`requireDb()` (throws 503, for auth). Which one a provider calls is the
+statement of whether it can degrade.
 
 ## Socrata query pattern
 
@@ -257,8 +309,10 @@ depending on environment.
 - Mongo connections MUST be cached on `global`, not opened fresh per invocation,
   or you'll exhaust Atlas's connection limit under any real traffic:
   see db.js pattern — cache client on global._mongoClient, reuse if present.
-- Env vars (SOCRATA_APP_TOKEN, MONGODB_URI, AI_PROVIDER, GEMINI_API_KEY) go in
-  Vercel dashboard > Project Settings. .env files do NOT deploy.
+- Env vars (SOCRATA_APP_TOKEN, MONGODB_URI, JWT_SECRET, AI_PROVIDER,
+  GEMINI_API_KEY) go in Vercel dashboard > Project Settings. .env files do NOT
+  deploy. JWT_SECRET and MONGODB_URI are REQUIRED — the app exits at boot
+  without them, so a missing one is a failed deploy, not a degraded one.
 - Hobby tier function execution cap (reportedly ~10s) — verify actual current
   limit on Vercel's own pricing page before assuming. This is another reason the
   AI explanation call happens at cache-write time, not inline in the live request
@@ -270,13 +324,16 @@ depending on environment.
 ## Repo shape
 
 /src
-  /routes      score.js, complaints.js, health.js
-  /services    scoreService.js, scoring.js (pure), explain.js, templateExplanation.js
-  /providers   socrata.js, cache.js, db.js
+  /routes      score.js, complaints.js, health.js, explanation.js, auth.js
+  /services    scoreService.js, scoring.js (pure), explain.js, templateExplanation.js,
+               authService.js
+  /providers   socrata.js, cache.js, mongo.js, baseline.js, users.js, sessions.js
     /ai        index.js, ollama.js, gemini.js, prompt.js
+  /middleware  requireAuth.js
+  /lib         validate.js, errors.js, password.js, tokens.js
   /config      constants.js
-/scripts       buildBaseline.js
-/test          scoring.test.js
+/scripts       buildBaseline.js, createUser.js, verify*.js
+/test          scoring.test.js, auth.test.js, password.test.js, ...
 api/index.js   Vercel serverless entrypoint (wraps Express app)
 
 ## OPEN ITEMS — verify against live API before building on top

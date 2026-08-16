@@ -1,11 +1,21 @@
 import { MongoClient } from "mongodb";
+import { ServiceUnavailableError } from "../lib/errors.js";
 
-// Connection management only — no collection logic lives here (that is cache.js).
+// Connection management only — no collection logic lives here (that is cache.js
+// for complaints, users.js / sessions.js for auth).
 //
-// Mongo is OPTIONAL by design. `MONGODB_URI` is still unset for teammates and on
-// a fresh clone, and the app must serve requests without it: an absent cache is
-// a slower app, not a broken one. Everything here therefore reports "not
-// configured" rather than throwing on startup.
+// TWO accessors, and the choice between them is a statement about the caller:
+//
+//   getDb()      returns `null` when Mongo is missing or unreachable. For
+//                callers that can degrade — the cache treats it as a miss,
+//                because an absent cache is a slower app, not a broken one.
+//   requireDb()  throws 503. For callers that CANNOT degrade — auth, where
+//                continuing without a user store would read a database outage
+//                as "no such user", or worse, as success.
+//
+// Nothing here throws on startup, so a Mongo outage stays a per-request failure
+// rather than a dead process. Whether the app should have BOOTED without a URI
+// at all is decided in index.js, not here: since M7 added auth, it should not.
 
 const DEFAULT_DB_NAME = "should_i_live_here";
 
@@ -48,6 +58,39 @@ export async function getDb() {
   }
 
   return connectPromise;
+}
+
+/**
+ * The strict counterpart to `getDb`, for callers that CANNOT degrade.
+ *
+ * Everything above treats a missing database as "no cache", which is right for
+ * the cache and wrong for auth: silently continuing without a user store during
+ * a login is how a database outage turns into an authentication bypass. Auth
+ * providers use this and let the 503 propagate.
+ */
+export async function requireDb() {
+  if (!isMongoConfigured()) {
+    throw new ServiceUnavailableError(
+      "auth_unavailable",
+      "MONGODB_URI is not configured; authentication cannot run."
+    );
+  }
+  let db;
+  try {
+    db = await getDb();
+  } catch (err) {
+    // The driver's message can name the host and credentials; keep it in our
+    // logs and hand the client a generic one.
+    console.error("[mongo] required connection failed:", err.message);
+    throw new ServiceUnavailableError(
+      "auth_unavailable",
+      "The account database is unreachable; try again shortly."
+    );
+  }
+  if (!db) {
+    throw new ServiceUnavailableError("auth_unavailable", "No database configured.");
+  }
+  return db;
 }
 
 /** Closes the pool. Used by tests and by graceful shutdown. */
