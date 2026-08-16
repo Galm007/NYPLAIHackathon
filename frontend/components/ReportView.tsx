@@ -22,6 +22,7 @@ interface LoadedReport {
 export function ReportView() {
   const searchParams = useSearchParams();
   const address = searchParams.get("address") ?? "";
+  const placeId = searchParams.get("placeId") ?? undefined;
   const [result, setResult] = useState<LoadedReport | null>(null);
   const [errorState, setErrorState] = useState<{ address: string; message: string } | null>(null);
 
@@ -30,7 +31,7 @@ export function ReportView() {
     let cancelled = false;
     (async () => {
       try {
-        const coords = await getLatLng(address);
+        const coords = await getLatLng(address, placeId);
         if (!coords) throw new Error("Couldn't locate that address.");
         const data = await fetchReport(coords.lat, coords.lng, address);
         if (cancelled) return;
@@ -43,7 +44,7 @@ export function ReportView() {
     return () => {
       cancelled = true;
     };
-  }, [address]);
+  }, [address, placeId]);
 
   const report = result?.address === address ? result : null;
   const error = errorState?.address === address ? errorState.message : null;

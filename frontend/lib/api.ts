@@ -26,10 +26,20 @@ async function geocode(query: string): Promise<{ lat: number; lng: number } | nu
   return { lat: data.lat, lng: data.lng };
 }
 
-// Thin client for the app's own /api/* routes. Today those routes return
-// mock data; once the real backend exists, either point these at it
-// directly or keep them as a same-origin proxy — callers don't change.
-export async function getLatLng(address: string): Promise<{ lat: number; lng: number } | null> {
+async function geocodeByPlaceId(placeId: string): Promise<{ lat: number; lng: number } | null> {
+  const res = await fetch(`/api/geocode?placeId=${encodeURIComponent(placeId)}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (typeof data.lat !== "number" || typeof data.lng !== "number") return null;
+  return { lat: data.lat, lng: data.lng };
+}
+
+export async function getLatLng(address: string, placeId?: string): Promise<{ lat: number; lng: number } | null> {
+  if (placeId) {
+    const result = await geocodeByPlaceId(placeId);
+    if (result) return result;
+  }
+
   const trimmed = address.trim();
   const result = await geocode(trimmed);
   if (result) return result;
