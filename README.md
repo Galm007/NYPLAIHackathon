@@ -43,6 +43,11 @@ means nothing on its own; "worse than 85% of NYC buildings" does. That
 baseline-relative scoring is the entire reason this is a *score* and not
 just a complaint tally with extra steps.
 
+Each score also comes with a plain-English explanation of *why* it landed
+where it did — AI-generated (Ollama locally, Gemini when deployed) with a
+deterministic template fallback, so the feature can never show a broken or
+empty state.
+
 This was built end-to-end in a single day for a hackathon: a real Express
 API that live-queries NYC Open Data and caches results in MongoDB, paired
 with a Next.js frontend that geocodes addresses through Google Maps and
@@ -72,22 +77,41 @@ Next.js frontend (`:3000`). Run both.
 
 ### 1. Backend
 
+Two ways to run it — pick one, you don't need both:
+
 ```bash
+# Option A — Docker (recommended for a fresh clone, no local installs)
 cd backend
-cp .env.example .env      # then fill in SOCRATA_APP_TOKEN, see table below
+docker compose up --build
+curl localhost:3001/health
+
+# Option B — native Node
+cd backend
 npm install
 npm run dev                # → http://localhost:3001
 ```
 
-`backend/.env`:
+A fresh clone runs with **zero `.env`** — every piece of backend
+infrastructure (Mongo cache, AI explanations, even the Socrata token) is
+optional and the app degrades gracefully without it. Set one up when you want
+live data that isn't throttled, a working cache, or real AI-generated
+explanations instead of the template fallback:
+
+```bash
+cd backend
+cp .env.example .env
+```
 
 | Var | Required? | Notes |
 |---|---|---|
 | `SOCRATA_APP_TOKEN` | Recommended | Free at [data.cityofnewyork.us developer settings](https://data.cityofnewyork.us/profile/edit/developer_settings). Works without one, but requests throttle hard under load — register one before demoing. |
-| `MONGODB_URI` | Optional | Atlas or local (`mongodb://127.0.0.1:27017`). Without it, the app runs **uncached** — every request hits Socrata live, no persistence. Scoring still works with zero Mongo, via the committed baseline fallback at `backend/src/config/baseline.json`. |
-| `MONGODB_DB` | Optional | Defaults to `should_i_live_here`. |
-| `PORT` | Optional | Defaults to `3001`. |
+| `MONGODB_URI` | Optional | Atlas or local. Without it, the app runs **uncached** — every request hits Socrata live, no persistence. Scoring still works with zero Mongo, via the committed baseline fallback at `backend/src/config/baseline.json`. |
+| `AI_PROVIDER` | Optional | `ollama` (default, local-only) or `gemini` (works anywhere, needs `GEMINI_API_KEY`). Neither is required — explanations fall back to a deterministic template on any failure. |
 | `USE_MOCK_DATA` | Optional | Set to `1`/`true` to serve fake (but realistic) scores instead of hitting Socrata — useful for frontend work with no network/token/Mongo at all. |
+
+**Full backend setup (Docker details, every env var, Ollama install/verify,
+common tasks) lives in [`backend/README.md`](backend/README.md) — read that,
+not this section, if something here doesn't cover your case.**
 
 ### 2. Frontend
 
@@ -156,6 +180,7 @@ in the UI is backed by the real data pipeline yet:
 |---|---|
 | Building Health / Block Quality scores + per-category counts | **Yes**, once the backend is running (`POST /api/score` hits live 311 data) |
 | Address search, autocomplete, interactive map | **Yes**, via Google Maps APIs |
+| Per-score "why" explanation text | **Partially** — AI-generated via Ollama/Gemini when a provider is configured, otherwise a deterministic (but still accurate) template. Either way it's derived from the real counts, never fabricated. |
 | "Recent Complaints" list on each report | **No** — `/api/score` doesn't return individual complaint records, only aggregate counts. This list currently only ever comes from the frontend's mock generator. The backend does have `GET /api/complaints` (individual points, built for a heatmap) that isn't wired to this list yet. |
 | Complaint status timeline (Open → In Progress → Closed) | **No** — 311 doesn't expose per-complaint status history at all. Explicitly labeled stub (`buildComplaintTimeline` in `frontend/lib/mock-data.ts`) that synthesizes a plausible timeline from a complaint's date + current status. |
 | Comment/reply threads on complaints, "Building Admin" role | **No** — no backend support exists or is planned. Seeded + session-local only; the admin role is a UI checkbox, not real auth. |
@@ -172,15 +197,18 @@ real data later without a redesign.
 ```
 backend/
   src/
-    routes/       score.js, complaints.js, health.js
-    services/     scoreService.js (orchestration), scoring.js (pure scoring), mockData.js
-    providers/    socrata.js, cache.js, mongo.js, baseline.js
+    routes/       score.js, complaints.js, explanation.js, health.js
+    services/     scoreService.js (orchestration), scoring.js (pure scoring),
+                  explain.js, templateExplanation.js, mockData.js
+    providers/    socrata.js, cache.js, mongo.js, baseline.js, ai/ (gemini.js, ollama.js, ...)
     config/       constants.js, baseline.json (committed fallback baseline)
-  scripts/        buildBaseline.js, verifyDataset.js, verifyCache.js, verifyScoring.js
-  test/           vitest suite, 200+ tests, no network required
+  scripts/        buildBaseline.js, verifyDataset.js, verifyCache.js, verifyScoring.js, verifyExplanations.js
+  test/           vitest suite, 299 tests, no network required
+  Dockerfile, compose.yaml   local dev stack (API + Mongo), optional
+  README.md       full backend setup — Docker, env vars, Ollama/Gemini
   API.md          full API reference with real captured requests/responses
   CLAUDE.md       backend architecture/data notes, decisions log
-  documentation/  milestone-by-milestone build write-ups (m0–m5), handoff notes
+  documentation/  milestone-by-milestone build write-ups (m0–m6), handoff notes
 
 frontend/
   app/            Next.js App Router pages + API routes (geocode, autocomplete, legacy report proxy)
@@ -195,7 +223,7 @@ documentation/    module-by-module reference docs for this whole repo — see be
 ## Testing
 
 ```bash
-cd backend && npm test        # vitest, 200+ tests, no network needed
+cd backend && npm test        # vitest, 299 tests, no network needed
 cd frontend && npm run build  # type-checks + builds; no dedicated test suite yet
 ```
 
@@ -223,6 +251,7 @@ Full module-by-module documentation lives in [`documentation/`](documentation/):
 
 Plus the backend team's own docs:
 
+- [`backend/README.md`](backend/README.md) — full backend setup: Docker, every env var, Ollama/Gemini install & troubleshooting
 - [`backend/API.md`](backend/API.md) — full endpoint reference with real captured samples
 - [`backend/CLAUDE.md`](backend/CLAUDE.md) — data model, complaint-type mapping, scoring methodology, known data caveats (e.g. `streetCondition`'s 25% null-geocode rate)
 - [`backend/documentation/`](backend/documentation/) — milestone-by-milestone build notes

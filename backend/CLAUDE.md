@@ -96,27 +96,40 @@ underweight noise relative to plumbing.
 
 ## API contract (FROZEN once agreed with team; do not change unilaterally)
 
+**CONTRACT CHANGE (post-freeze): explanationSource field + new /api/explanation
+endpoint added below. Flag to Person 2 — this affects frontend swap-in-place UI.**
+
 POST /api/score
   body: { lat: number, lng: number }
   returns: {
     address: null,
-    buildingHealth: { score, band, counts: {heatHotWater, unsanitaryCondition, plumbing}, radiusMeters },
-    blockQuality:   { score, band, counts: {noise, parking, streetCondition}, radiusMeters }
+    buildingHealth: {
+      score, band, counts: {heatHotWater, unsanitaryCondition, plumbing}, radiusMeters,
+      explanation: string,               // AI text if cached, else template text
+      explanationSource: "ai" | "template"
+    },
+    blockQuality: {
+      score, band, counts: {noise, parking, streetCondition}, radiusMeters,
+      explanation: string,
+      explanationSource: "ai" | "template"
+    }
   }
-  ADDITIVE EXTENSIONS (M4/M5, no existing field changed name/type/meaning):
-    each sub-score also carries: confidence ("normal"|"low"), confidenceReason
-    (null | "no_complaints_found" | "no_baseline" | "stale_baseline_radius"),
-    bucketScores {bucket: 0-100}, bucketConfidence {bucket: "low"} (non-normal only)
-    and the payload carries: meta { windowMonths, baselineVersion, baselineSource,
-    coord, cache }.  See documentation/handoff.md for the rationale.
-  On upstream failure: 503 { error: "upstream_unavailable" }.
+  ALWAYS FAST. Never blocks on an AI call. On cache miss, explanation is the
+  deterministic template result, explanationSource: "template".
 
-GET /api/complaints?lat=&lng=&radius=&limit=
+GET /api/explanation?lat=&lng=&tier=building|block
+  returns: { explanation: string, explanationSource: "ai" }
+  SLOW PATH. Only called by frontend when /api/score returned
+  explanationSource: "template". Calls the active AI adapter (Ollama or Gemini
+  per AI_PROVIDER), writes result to the SAME cache doc /api/score reads from,
+  returns the real explanation once resolved. Synchronous (frontend waits on
+  this one call, no polling) — deliberate hackathon simplification, not an
+  oversight. Frontend swaps the template text for this result in place once
+  it resolves; if /api/score already returned explanationSource: "ai", frontend
+  skips this call entirely.
+
+GET /api/complaints?lat=&lng=&radius=
   returns: [ { type, lat, lng, created_date, status }, ... ]   // for frontend heatmap
-  headers: X-Complaints-Truncated: true|false, X-Complaints-Limit: <n>
-  NOTE (M5): this is "the most recent N points", not the full window. NEVER count
-  from it — a dense block hits the row cap and returns only its recent months.
-  Counts come from /api/score, which aggregates server-side.
 
 GET /health
   returns: 200 OK   // for deploy checks + keep-warm pings
@@ -141,7 +154,7 @@ Client must set: app token header, ~5s timeout, retry-with-backoff on 429/5xx (m
 
 ## Scoring
 
-score(counts, baseline) is a PURE function. IMPLEMENTED in src/services/scoring.js.
+score(counts, baseline) is a PURE function.
 1. Per bucket: convert summed count to percentile position vs baseline for that
    bucket + radius tier.
 2. Aggregate three bucket percentiles into one sub-score (start: simple mean).
@@ -150,16 +163,6 @@ score(counts, baseline) is a PURE function. IMPLEMENTED in src/services/scoring.
 Baseline is computed ONCE by scripts/buildBaseline.js (sample ~few hundred spread
 NYC coords, compute median + p90 per bucket per tier, write one baseline doc, commit
 output). This is what makes the score defensible vs a raw count map. Do not skip.
-
-As built (M4), with two additions to the above:
-- The baseline also records **zeroShare** per bucket, and the scorer reads it.
-  These buckets are heavily zero-inflated; without it the first complaint at a
-  location interpolates as barely worse than none.
-- The baseline records the **radii it was sampled at**. It is only valid for
-  those radii — retuning RADIUS_TIERS without rerunning buildBaseline.js marks
-  scores `stale_baseline_radius` rather than silently shifting them.
-- Committed output lives at `src/config/baseline.json` and is loaded when Mongo
-  has no baseline document, so a fresh clone still produces real scores.
 
 Config constants (radii, time window, weights, thresholds) live in /config/constants.js.
 Time window: start at trailing 24 months, tunable.
@@ -177,92 +180,142 @@ collection complaint_cache:
 collection baseline:
   { _id: "v1", perBucket: { <bucket>: {median, p90} }, radiusTier, computedAt }
 
-  AS BUILT (M4) — one document, not one per tier. Bucket names are globally
-  unique, so `perBucket` is flat and `radiusTier` became a `radiusMeters` map:
-  { _id: "v1",
-    perBucket: { <bucket>: { median, p90, zeroShare, mean, max, n } },
-    radiusMeters: { building: 25, block: 350 },   // what the sample was taken at
-    windowMonths, sampleSize, perTierSamples, sampleSources, computedAt }
-  The same document is committed to src/config/baseline.json and is used when
-  Mongo has none, so the API scores correctly with no Mongo at all.
+## AI Explanation Layer (NEW SCOPE)
+
+Each sub-score (Building Health, Block Quality) is accompanied by a 1-2 sentence
+AI-generated explanation of why it got that band ("Good to live" / "Proceed with
+caution" / etc). This is a separate step AFTER scoring, not inside the pure
+score() function — scoring stays deterministic and fixture-tested; the AI call is
+neither, and must be isolated so it can fail without breaking scoring.
+
+**Two adapters, same interface, swapped by env var:**
+- `ollama` — local dev only. Requires Ollama running locally with `llama3` pulled.
+  Cannot run on Vercel (serverless has no persistent local process).
+- `gemini` — deployed (Vercel) target. Hosted HTTP API, works identically in any
+  environment including serverless.
+
+Shared contract both adapters must implement:
+`generateExplanation({ label, band, counts, radiusLabel }) -> Promise<string>`
+
+```
+/providers/ai
+  index.js      factory: reads AI_PROVIDER env var, returns ollama.js or gemini.js
+  ollama.js     calls http://localhost:11434/api/generate, model "llama3"
+  gemini.js     calls generativelanguage.googleapis.com, model "gemini-2.5-flash-lite"
+  prompt.js     buildPrompt() — SHARED by both adapters so output tone stays consistent
+```
+
+Prompt rules (baked into prompt.js, do not duplicate/diverge per adapter):
+- Explicitly instruct: base explanation ONLY on the provided counts, do not invent
+  addresses, dates, or specific incidents. This is the main defense against
+  hallucinated specifics.
+- temperature 0.3 (consistency over creativity), short output cap (~80-100 tokens).
+- No mention of "percentile" or other technical scoring terms in the output.
+
+**Env vars:**
+- `AI_PROVIDER` = "ollama" (local `.env`) or "gemini" (Vercel dashboard)
+- `GEMINI_API_KEY` = set in Vercel dashboard only, never committed
+
+**Fallback is not optional.** services/explain.js wraps the adapter call in
+try/catch; on ANY failure (timeout, rate limit, service down), fall back to
+services/templateExplanation.js, a deterministic template keyed by band + dominant
+bucket. Demo must never show a broken/error state for this feature.
+
+**Caching:** explanation is generated once and stored on the SAME complaint_cache
+Mongo document as the score (same TTL), not regenerated per request. This matters
+more for Ollama (slow on CPU) but keep it for Gemini too, to stay under free-tier
+daily request caps.
+
+**Two-call pattern (see API contract for exact shapes):** POST /api/score never
+blocks on the AI call — on a cache miss it returns the deterministic template
+explanation immediately with explanationSource: "template". Frontend then fires
+GET /api/explanation as a second call ONLY when it sees "template", which does
+the actual AI generation, writes it to the same cache doc, and returns the real
+text for the frontend to swap in. Synchronous, no polling — deliberate hackathon
+simplification. This is what actually solves the Vercel timeout risk: the slow
+AI call is now its own request with its own budget, not stacked behind the
+Socrata + scoring latency on the main score request.
+
+**Model deprecation flag:** gemini-2.5-flash and gemini-2.5-flash-lite are
+scheduled to shut down Oct 16, 2026 per Google's notice. Fine for the hackathon
+timeline, but if this project continues past that date, swap the model string —
+it lives in ONE place (constants.js), not hardcoded in gemini.js directly, so
+confirm that's actually how it's wired before relying on it.
+
+**Tone-consistency check:** Llama 3 8B and Gemini Flash-Lite are different models
+and may not produce similarly-toned output from an identical prompt. Before
+demo day, run both adapters against the same cached counts and eyeball the two
+outputs side by side. If they diverge noticeably, tighten prompt.js (more explicit
+tone/length constraints) rather than shipping two different-feeling products
+depending on environment.
+
+## Deployment (Vercel)
+
+- Express app must be adapted for serverless, not run as-is with app.listen().
+  Wrap the whole app with `serverless-http` in api/index.js (least restructuring
+  for a hackathon timeline vs splitting every route into its own /api file).
+- Mongo connections MUST be cached on `global`, not opened fresh per invocation,
+  or you'll exhaust Atlas's connection limit under any real traffic:
+  see db.js pattern — cache client on global._mongoClient, reuse if present.
+- Env vars (SOCRATA_APP_TOKEN, MONGODB_URI, AI_PROVIDER, GEMINI_API_KEY) go in
+  Vercel dashboard > Project Settings. .env files do NOT deploy.
+- Hobby tier function execution cap (reportedly ~10s) — verify actual current
+  limit on Vercel's own pricing page before assuming. This is another reason the
+  AI explanation call happens at cache-write time, not inline in the live request
+  path when deployed.
+- Ollama-based local dev and Gemini-based deployed behavior are expected to
+  differ in this one respect: this is intentional, not a bug, per adapter design
+  above.
 
 ## Repo shape
 
 /src
   /routes      score.js, complaints.js, health.js
-  /services    scoreService.js, scoring.js (pure), mockData.js
-  /providers   socrata.js, cache.js, mongo.js, baseline.js
-  /lib         validate.js
-  /config      constants.js, baseline.json (COMMITTED ARTIFACT — keep in git)
-/scripts       buildBaseline.js, verifyDataset.js, verifyCache.js, verifyScoring.js
-/test          scoring, baseline, cache, socrata, scoreService, routes, validate,
-               constants, mockData  (209 tests, no network)
+  /services    scoreService.js, scoring.js (pure), explain.js, templateExplanation.js
+  /providers   socrata.js, cache.js, db.js
+    /ai        index.js, ollama.js, gemini.js, prompt.js
+  /config      constants.js
+/scripts       buildBaseline.js
+/test          scoring.test.js
+api/index.js   Vercel serverless entrypoint (wraps Express app)
 
 ## OPEN ITEMS — verify against live API before building on top
 
-Re-run `node scripts/verifyDataset.js` to re-check items 2-4 at any time.
-Full findings: `documentation/m2-socrata-client.md`.
-
 1. ~~Exact complaint_type strings~~ — RESOLVED, see table above.
-2. ~~Exact geolocation column name for within_circle~~ — **RESOLVED (2026-08-15).**
-   The column is `location`, a Point geometry. The `latitude`/`longitude` fields
-   are numbers and are REJECTED by within_circle with a type-mismatch error.
-   Stored as `LOCATION_FIELD` in constants.js.
-3. ~~Null-geocoding rate PER bucket~~ — **RESOLVED (2026-08-15), one problem found.**
-   Measured over the trailing 24mo, summed at bucket level:
-   | bucket | n | null geo |
-   |---|---|---|
-   | heatHotWater | 651,234 | 0.01% |
-   | unsanitaryCondition | 247,618 | 0.01% |
-   | plumbing | 156,235 | 0.04% |
-   | noise | 1,450,296 | 0.35% |
-   | parking | 1,514,213 | 0.48% |
-   | **streetCondition** | **236,517** | **25.60%** |
-   Five of six buckets are effectively fully geocoded — the CLAUDE.md guess that
-   plumbing/unsanitary would be spotty was wrong, they are the cleanest.
-   **streetCondition is the problem**, driven by `Street Condition` (32.6% null,
-   all from DOT). The nulls are NOT uniform: by borough they run 19.1% (Manhattan)
-   to 31.1% (Queens), so this biases cross-borough comparison rather than
-   cancelling out against the baseline. 99.6% of the null rows do still carry
-   `incident_address`, so an address-geocoding fallback is possible but is not
-   hackathon-scoped. DECISION PENDING — see handoff.md.
-4. ~~Dataset title / date range~~ — **RESOLVED (2026-08-15).** Title is now
-   "311 Service Requests **from 2020** to Present" (was "from 2010"). Data runs
-   2020-01-01 to present, updated daily. Our trailing 24mo window sits safely
-   inside that, but a window longer than ~68 months would silently truncate.
+2. Exact geolocation column name for within_circle (the geo-typed column, not the
+   separate latitude/longitude text fields). Check via a single-row pull:
+   `erm2-nwe9.json?$limit=1` and inspect field types on the dataset's About page.
+3. Null-geocoding rate PER bucket (not per raw string — check at the bucket level
+   since that's what scoring actually uses). Sample a few hundred rows each.
+   Noise and parking usually well-geocoded; plumbing/unsanitary may be spottier.
+   If a bucket is mostly null, that sub-score is unreliable; drop it or fall back
+   to geocoding by incident_address.
+4. Dataset title has changed over time on the Socrata page (same UID). Confirm
+   current title + date range on the dataset page.
 5. Tight building radius may bleed into adjacent buildings on dense blocks. Person 3
    owns radius testing; coordinate before trusting building scores.
-   **Partial finding (2026-08-15):** 25m is sound *only if* the frontend sends a
-   rooftop-accurate coordinate. Tested against real 311 building coords, 25m
-   captures the building's own complaints and bleeds <1% vs 50m. But an arbitrary
-   mid-street coordinate returns ZERO building complaints — which scores as a
-   perfect building. This is the dangerous failure mode: a bad coordinate looks
-   like good news. Frontend must send rooftop-precision coords, not
-   street-interpolated ones.
-   **Mitigated in M4:** an all-zero tier is returned with `confidence: "low"` and
-   `confidenceReason: "no_complaints_found"`. That is a safety net, not a
-   substitute for a good coordinate.
-
-6. **Baseline sampling must be per-tier** (found in M4, do not undo). Building-tier
-   sample coordinates come only from HPD building-interior complaint types; block
-   -tier from all types. Sampling both from one pooled draw puts street-geocoded
-   complaints (Illegal Parking, Street Condition) into the building distribution —
-   36.5% of points had zero building complaints — which drags the building median
-   to ~1 and scores every real building against a distribution that is mostly not
-   buildings. See `documentation/m4-m5-scoring-integration.md`.
+6. Gemini free-tier RPM/RPD caps — figures used in planning came from third-party
+   reporting, not confirmed directly against ai.google.dev/gemini-api/docs/pricing.
+   Check that page directly before assuming the exact numbers.
 
 ## Build order
 
-P0: Express skeleton + MOCKED /api/score in frozen shape, deployed. Unblocks team. DONE
-P1: Socrata client + null-geocoding check (item 3). Item 1 already resolved above. DONE
-P2: real getCounts (with bucket-level summing) + cache read/write + TTL. DONE
-P3: buildBaseline.js, then score() against it. DONE
-P4: swap mock for real, integrate. Budget full time; clean integration is rare. DONE
-P5: pre-warm cache for demo addresses; serve cached value on live-API failure;
-    keep backend warm (free tiers cold-start and look broken mid-demo). NEXT
+P0: Express skeleton + MOCKED /api/score in frozen shape, deployed. Unblocks team.
+P1: Socrata client + null-geocoding check (item 3). Item 1 already resolved above.
+P2: real getCounts (with bucket-level summing) + cache read/write + TTL.
+P3: buildBaseline.js, then score() against it.
+P3.5: AI explanation layer — both adapters, factory, template fallback, GET
+    /api/explanation endpoint as the separate slow-path call (see AI
+    Explanation Layer and API contract sections above).
+P4: swap mock for real, integrate. Budget full time; clean integration is rare.
+P5: pre-warm cache for demo addresses (score + explanation both); serve cached
+    value on live-API/AI failure; keep backend warm (free tiers cold-start and
+    look broken mid-demo).
 
 ## Conventions
 
 - Live-proxy + cache. NOT bulk ingest (millions of rows would blow free Atlas tier).
 - Validate coords in NYC bounds (~lat 40.4-40.95, lng -74.3 to -73.7); 400 on bad input.
 - Do not put personal data or coordinates in logs beyond what debugging needs.
+- AI adapters are provider-agnostic at the call site (services/explain.js). Never
+  branch on AI_PROVIDER outside providers/ai/index.js.

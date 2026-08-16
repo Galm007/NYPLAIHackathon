@@ -78,12 +78,17 @@ function isCompleteCounts(counts, radiusTier) {
 }
 
 /**
- * Looks up several tiers for one point in a single query.
+ * Looks up several tiers for one point in a single query, returning the whole
+ * cached entry — counts AND any explanation stored alongside them.
  *
- * @returns {Promise<Record<string, object|null>>} counts per requested tier;
- *   `null` for any tier that was not cached.
+ * One query, not two: the explanation lives on the same document as the counts
+ * it describes, so reading them together costs nothing extra and guarantees
+ * they cannot disagree.
+ *
+ * @returns {Promise<Record<string, {counts: object, explanation: string|null,
+ *   explanationSource: string|null}|null>>} `null` for any tier not cached.
  */
-export async function readCounts(lat, lng, radiusTiers) {
+export async function readEntries(lat, lng, radiusTiers) {
   const result = Object.fromEntries(radiusTiers.map((tier) => [tier, null]));
   if (!isMongoConfigured()) return result;
 
@@ -100,7 +105,11 @@ export async function readCounts(lat, lng, radiusTiers) {
 
     for (const doc of docs) {
       if (isCompleteCounts(doc.counts, doc.radiusTier)) {
-        result[doc.radiusTier] = doc.counts;
+        result[doc.radiusTier] = {
+          counts: doc.counts,
+          explanation: doc.explanation ?? null,
+          explanationSource: doc.explanationSource ?? null,
+        };
       }
     }
     return result;
@@ -108,6 +117,19 @@ export async function readCounts(lat, lng, radiusTiers) {
     console.warn("[cache] read failed, treating as miss:", err.message);
     return result;
   }
+}
+
+/**
+ * Counts only, for callers that do not care about explanations.
+ *
+ * @returns {Promise<Record<string, object|null>>} counts per requested tier;
+ *   `null` for any tier that was not cached.
+ */
+export async function readCounts(lat, lng, radiusTiers) {
+  const entries = await readEntries(lat, lng, radiusTiers);
+  return Object.fromEntries(
+    Object.entries(entries).map(([tier, entry]) => [tier, entry?.counts ?? null])
+  );
 }
 
 /**
@@ -129,12 +151,54 @@ export async function writeCounts(lat, lng, radiusTier, counts, { now } = {}) {
       key,
       // createdAt must be a BSON Date; a string is silently ignored by the TTL
       // monitor and the document would live forever.
+      //
+      // This REPLACES the document, so any cached explanation is dropped along
+      // with the counts it described. That is correct: an explanation written
+      // about last week's counts must not survive onto this week's.
       { ...key, counts, createdAt: now ?? new Date() },
       { upsert: true }
     );
     return true;
   } catch (err) {
     console.warn("[cache] write failed, continuing uncached:", err.message);
+    return false;
+  }
+}
+
+/**
+ * Stores a generated explanation on the SAME document as the counts it
+ * describes, so the pair shares one TTL and cannot drift apart.
+ *
+ * `updateOne`, not `replaceOne`: the counts are already there and must survive.
+ * `upsert: false` deliberately — if the counts document has expired, there is
+ * nothing for this explanation to belong to, and writing a bare explanation
+ * would leave a document that `readEntries` rejects as incomplete anyway.
+ *
+ * Never throws. A failed explanation write costs a regeneration, not a request.
+ *
+ * @returns {Promise<boolean>} whether the write landed on an existing document
+ */
+export async function writeExplanation(lat, lng, radiusTier, explanation, source) {
+  if (!isMongoConfigured()) return false;
+
+  try {
+    const db = await getDb();
+    if (!db) return false;
+
+    const result = await db
+      .collection(CACHE_COLLECTION)
+      .updateOne(cacheKey(lat, lng, radiusTier), {
+        // createdAt is untouched: refreshing it here would extend the TTL of
+        // stale counts every time someone asked for an explanation.
+        $set: {
+          explanation,
+          explanationSource: source,
+          explanationAt: new Date(),
+        },
+      });
+    return result.matchedCount > 0;
+  } catch (err) {
+    console.warn("[cache] explanation write failed:", err.message);
     return false;
   }
 }

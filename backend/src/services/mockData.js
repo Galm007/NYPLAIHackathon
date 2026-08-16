@@ -5,6 +5,7 @@ import {
   WINDOW_MONTHS,
 } from "../config/constants.js";
 import { buildReport } from "./scoring.js";
+import { explainFromTemplate } from "./explain.js";
 
 // Mock data. Started as the P0 stand-in that unblocked the frontend; after M5
 // it is opt-in via USE_MOCK_DATA=1 and exists for offline frontend work — no
@@ -89,7 +90,7 @@ const MOCK_BASELINE = {
 
 /** Mocked POST /api/score payload. `address` is always null — we do not geocode. */
 export function mockScoreReport(lat, lng) {
-  return buildReport(
+  const report = buildReport(
     {
       building: mockCounts(lat, lng, "building", 12),
       block: mockCounts(lat, lng, "block", 2600),
@@ -97,6 +98,20 @@ export function mockScoreReport(lat, lng) {
     MOCK_BASELINE,
     { mock: true, windowMonths: WINDOW_MONTHS }
   );
+
+  // Template explanations, exactly as the live path serves on a cache miss —
+  // so the frontend's "template now, swap in AI later" flow is exercisable with
+  // no AI provider running at all.
+  report.buildingHealth = {
+    ...report.buildingHealth,
+    ...explainFromTemplate("building", report.buildingHealth),
+  };
+  report.blockQuality = {
+    ...report.blockQuality,
+    ...explainFromTemplate("block", report.blockQuality),
+  };
+
+  return report;
 }
 
 const ALL_TYPES = Object.keys(TYPE_TO_BUCKET);

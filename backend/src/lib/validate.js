@@ -1,4 +1,4 @@
-import { NYC_BOUNDS } from "../config/constants.js";
+import { NYC_BOUNDS, RADIUS_TIERS } from "../config/constants.js";
 
 /**
  * Thrown for bad client input. Routes translate this into a 400 rather than
@@ -48,6 +48,18 @@ export function validateCoords({ lat, lng }) {
   }
 
   return { lat: parsedLat, lng: parsedLng };
+}
+
+/** Required radius tier for /api/explanation. */
+export function validateTier(value) {
+  const tiers = Object.keys(RADIUS_TIERS);
+  if (value === undefined || value === null || value === "") {
+    throw new BadRequestError("missing_tier", `tier is required (${tiers.join(" or ")})`);
+  }
+  if (!tiers.includes(value)) {
+    throw new BadRequestError("invalid_tier", `tier must be one of: ${tiers.join(", ")}`);
+  }
+  return value;
 }
 
 /** Optional positive integer row cap, bounded so one request cannot pull the dataset. */
