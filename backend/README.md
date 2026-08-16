@@ -99,9 +99,15 @@ npm run user:create -- --username demo --password 'a good password' --role tenan
 If you skipped a step the app tells you which one and exits:
 
 ```
+[auth] FATAL: MONGODB_URI is REQUIRED and is unset.
+        Mongo stores user accounts and sessions, and auth guards every
+        data route — so without it the app can serve nothing but /health.
+        `docker compose up` provides one; see README.md.
+
 [auth] FATAL: JWT_SECRET is unset or shorter than 32 characters.
-[auth] FATAL: MONGODB_URI is unset. Mongo is optional for the cache but
-        REQUIRED for auth, and auth now guards every data route.
+        Generate one with:
+          node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
+        then put it in .env as JWT_SECRET=...
 ```
 
 `npm start` is the same without file watching. Both load `.env` automatically via
