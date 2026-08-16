@@ -376,7 +376,7 @@ no document.
   the window — only the uppercase variants exist. Kept deliberately as cheap
   insurance against HPD changing case; harmless, but don't be confused by them.
 - **`DEP Street Condition` is nearly extinct** — 28 rows in 24 months.
-- **Frontend is address-keyed, backend is coordinate-keyed.** `front/lib/api.ts`
+- **Frontend is address-keyed, backend is coordinate-keyed.** `frontend/lib/api.ts`
   calls `/api/report?address=`; this backend takes `{lat, lng}` and never
   geocodes. Bridging is frontend-side work, but nobody should discover it at
   demo time.
