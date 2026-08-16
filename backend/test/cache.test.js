@@ -13,7 +13,9 @@ import {
   cacheKey,
   ensureCacheIndexes,
   readCounts,
+  readEntries,
   writeCounts,
+  writeExplanation,
   resetCacheIndexMemo,
 } from "../src/providers/cache.js";
 import { getDb, isMongoConfigured, closeMongo } from "../src/providers/mongo.js";
@@ -272,5 +274,88 @@ describe("degradation", () => {
       delete process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS;
       process.env.MONGODB_URI = good;
     }
+  });
+});
+
+// --- explanations stored alongside counts ------------------------------------
+
+describe("explanation caching", () => {
+  const LAT = 40.7484;
+  const LNG = -73.9857;
+  const COUNTS = { heatHotWater: 12, unsanitaryCondition: 3, plumbing: 1 };
+
+  beforeEach(async () => {
+    await writeCounts(LAT, LNG, "building", COUNTS);
+  });
+
+  it("readEntries returns counts and explanation together in one query", async () => {
+    await writeExplanation(LAT, LNG, "building", "Generated text.", "ai");
+
+    const entries = await readEntries(LAT, LNG, ["building"]);
+    expect(entries.building.counts).toEqual(COUNTS);
+    expect(entries.building.explanation).toBe("Generated text.");
+    expect(entries.building.explanationSource).toBe("ai");
+  });
+
+  it("reports a null explanation when none has been generated yet", async () => {
+    const entries = await readEntries(LAT, LNG, ["building"]);
+    expect(entries.building.counts).toEqual(COUNTS);
+    expect(entries.building.explanation).toBeNull();
+    expect(entries.building.explanationSource).toBeNull();
+  });
+
+  it("writing an explanation does not disturb the counts", async () => {
+    await writeExplanation(LAT, LNG, "building", "Generated text.", "ai");
+    const counts = await readCounts(LAT, LNG, ["building"]);
+    expect(counts.building).toEqual(COUNTS);
+  });
+
+  it("does not extend the TTL of the counts it describes", async () => {
+    // Refreshing createdAt here would let a much-explained address keep stale
+    // counts alive indefinitely.
+    const db = await getDb();
+    const before = await db.collection(CACHE_COLLECTION).findOne({ radiusTier: "building" });
+    await writeExplanation(LAT, LNG, "building", "Generated text.", "ai");
+    const after = await db.collection(CACHE_COLLECTION).findOne({ radiusTier: "building" });
+
+    expect(after.createdAt.getTime()).toBe(before.createdAt.getTime());
+    expect(after.explanationAt).toBeInstanceOf(Date);
+  });
+
+  it("refreshing the counts drops the explanation that described them", async () => {
+    // An explanation written about last week's counts must not survive onto
+    // this week's.
+    await writeExplanation(LAT, LNG, "building", "Generated text.", "ai");
+    await writeCounts(LAT, LNG, "building", { ...COUNTS, heatHotWater: 99 });
+
+    const entries = await readEntries(LAT, LNG, ["building"]);
+    expect(entries.building.counts.heatHotWater).toBe(99);
+    expect(entries.building.explanation).toBeNull();
+  });
+
+  it("does not create a document when the counts have expired", async () => {
+    // A bare explanation with no counts is unusable — readEntries would reject
+    // it as incomplete anyway.
+    const db = await getDb();
+    await db.collection(CACHE_COLLECTION).deleteMany({});
+
+    const written = await writeExplanation(LAT, LNG, "building", "Orphan.", "ai");
+    expect(written).toBe(false);
+    expect(await db.collection(CACHE_COLLECTION).countDocuments()).toBe(0);
+  });
+
+  it("returns false rather than throwing when Mongo is unreachable", async () => {
+    const uri = process.env.MONGODB_URI;
+    await closeMongo();
+    process.env.MONGODB_URI = "mongodb://127.0.0.1:1/nope";
+    process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS = "150";
+
+    await expect(
+      writeExplanation(LAT, LNG, "building", "text", "ai")
+    ).resolves.toBe(false);
+
+    await closeMongo();
+    process.env.MONGODB_URI = uri;
+    delete process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS;
   });
 });

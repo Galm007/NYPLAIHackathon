@@ -13,7 +13,7 @@ illustrations.
 
 ---
 
-## Two things to know before integrating
+## Three things to know before integrating
 
 **1. This API does not geocode.** It takes `{lat, lng}` and never converts an
 address. The frontend gets coordinates from Google Places Autocomplete and sends
@@ -25,6 +25,87 @@ but the flag is a safety net, not a fix.
 **2. Never count from `/api/complaints`.** It returns the most recent N points
 and truncates on dense blocks. All counts come from `/api/score`, which
 aggregates server-side over the full window.
+
+**3. Explanations arrive in two calls.** `/api/score` is always fast and may
+return a template explanation. If it does, call `/api/explanation` to get the
+AI-written one and swap it in place. See [Explanations](#explanations) below.
+
+---
+
+## Explanations
+
+Every sub-score carries a 1–2 sentence plain-English `explanation` and an
+`explanationSource` saying where it came from.
+
+| `explanationSource` | Meaning |
+| --- | --- |
+| `"template"` | Deterministic text generated server-side with no AI. Always instant. |
+| `"ai"` | Written by a language model from the same complaint counts. |
+
+`/api/score` **never waits on the AI**. On a cache miss it returns the template
+immediately; the AI version is produced by a second call.
+
+### The two-call flow
+
+```
+1. POST /api/score                      → explanationSource: "template"
+2. GET  /api/explanation?...&tier=...   → explanationSource: "ai"
+3. swap the text in place
+```
+
+A real round trip against one Harlem coordinate, captured in that order:
+
+```bash
+$ curl -X POST localhost:3001/api/score -H 'Content-Type: application/json' \
+    -d '{"lat":40.8116,"lng":-73.9465}'
+  buildingHealth.explanation      "Fewer 311 complaints here than in most of the city
+                                   for this building. Plumbing stands out with 5
+                                   complaints in the last 24 months, out of 17 total."
+  buildingHealth.explanationSource "template"          ← needs upgrading
+
+$ curl "localhost:3001/api/explanation?lat=40.8116&lng=-73.9465&tier=building"
+  explanation                     "Residents in this building can expect a relatively
+                                   quiet maintenance record, having accumulated only 6
+                                   heat and hot water, 6 unsanitary conditions, and 5
+                                   plumbing issues over the past 24 months. …"
+  explanationSource               "ai"                 ← swap this in
+
+$ curl -X POST localhost:3001/api/score …   # same coordinate, later
+  buildingHealth.explanationSource "ai"                ← now cached; skip step 2
+```
+
+Skip step 2 for any sub-score where `/api/score` already returned `"ai"` — that
+means the explanation was cached from an earlier visit and there is nothing to
+upgrade.
+
+```js
+const report = await getScore(lat, lng);
+render(report); // template text shows immediately — never block on step 2
+
+for (const [tier, key] of [["building", "buildingHealth"], ["block", "blockQuality"]]) {
+  if (report[key].explanationSource === "ai") continue; // already the real thing
+
+  fetch(`${BASE}/api/explanation?lat=${lat}&lng=${lng}&tier=${tier}`)
+    .then((res) => res.json())
+    .then(({ explanation, explanationSource }) => {
+      if (explanationSource === "ai") swapExplanation(key, explanation);
+    })
+    .catch(() => {}); // template text stays; nothing to show the user
+}
+```
+
+Never block rendering on step 2. If `/api/explanation` never resolves, the
+template text is already on screen and remains correct.
+
+The two calls are technically independent, but firing them in parallel is
+slower, not faster: `/api/explanation` needs the same complaint counts, so
+starting it before `/api/score` has populated the cache makes it fetch them
+again. Chaining costs nothing visible — the template renders off call 1 either
+way. See [Latency](#latency-1) under that endpoint.
+
+Explanations are generated from the complaint counts only. They cannot reference
+a specific incident, address, date, or landlord, because the model is never
+given any.
 
 ---
 
@@ -85,7 +166,9 @@ Bushwick, Brooklyn. A well-maintained building on a loud block:
       "unsanitaryCondition": 100,
       "plumbing": 86
     },
-    "bucketConfidence": {}
+    "bucketConfidence": {},
+    "explanation": "There have been 5 complaints about heat and hot water issues in this building over the past 24 months, which is a notable number given that there were no unsanitary conditions reported. Additionally, only 1 complaint was filed regarding plumbing issues, indicating relatively low numbers of problems with these basic services.",
+    "explanationSource": "ai"
   },
   "blockQuality": {
     "score": 36,
@@ -105,7 +188,9 @@ Bushwick, Brooklyn. A well-maintained building on a loud block:
     },
     "bucketConfidence": {
       "streetCondition": "low"
-    }
+    },
+    "explanation": "As a resident here, you can expect to hear a lot of noise complaints and witness frequent issues with illegal parking and blocked driveways. Noise complaints account for 2876 of the total complaints filed in the last 24 months, while street and sidewalk conditions are relatively low at 144 complaints.",
+    "explanationSource": "ai"
   },
   "meta": {
     "windowMonths": 24,
@@ -138,16 +223,18 @@ Each sub-score object:
 | `confidenceReason` | string \| `null` | Why it is low; `null` when normal |
 | `bucketScores` | `{bucket: 0–100}` | Per-bucket score, same direction as `score` |
 | `bucketConfidence` | `{bucket: "low"}` | **Only lists non-normal buckets.** `{}` means all solid. |
+| `explanation` | string | 1–2 sentences in plain English. Never empty. |
+| `explanationSource` | `"ai"` \| `"template"` | `"template"` means the AI version is available from `/api/explanation` |
 
 `meta`:
 
 | Field | Meaning |
 | --- | --- |
 | `windowMonths` | Trailing window the counts cover (24) |
-| `baselineVersion` | Which citywide baseline scored this (`"v1"`) |
+| `baselineVersion` | Which citywide baseline scored this (`"v1"`; `"mock"` in mock mode) |
 | `baselineSource` | `"mongo"`, `"file"`, or `"mock"` |
-| `coord` | The **rounded** coordinate actually queried (~11m from what you sent) |
-| `cache` | `"hit"` or `"miss"` per tier — `"hit"` responses are ~2ms |
+| `coord` | The **rounded** coordinate actually queried (~11m from what you sent). Omitted in mock mode. |
+| `cache` | `"hit"` or `"miss"` per tier — `"hit"` responses are ~2ms. Omitted in mock mode. |
 | `mock` | Present and `true` only in mock mode |
 
 ### How the score is computed
@@ -212,10 +299,15 @@ is the failure mode the flag exists for:
 
 | Case | Time |
 | --- | --- |
-| Cached (`meta.cache` all `"hit"`) | ~2ms |
-| Uncached | 1.6–2.5s (two upstream calls) |
+| Cached (`meta.cache` all `"hit"`) | ~2–5ms |
+| Uncached | 0.3–2.5s (two upstream calls) |
+| Uncached, upstream slow | up to ~8s (observed) |
 
-Cache entries live 24h. Pre-warm any address you intend to demo.
+The tail is real: NYC Open Data occasionally takes seconds to answer and the
+client retries with backoff on top. An 8.3s cold response was measured on
+2026-08-15. That sits uncomfortably close to Vercel's function cap, and it is
+the reason the AI call was moved out of this request. Pre-warm any address you
+intend to demo — cache entries live 24h.
 
 ---
 
@@ -303,6 +395,143 @@ endpoint for visual density only; take every number from `/api/score`.**
 
 ---
 
+## `GET /api/explanation`
+
+The slow path. Generates the AI explanation for **one** sub-score, caches it,
+and returns it. Call this only when `/api/score` returned
+`explanationSource: "template"` for that tier.
+
+### Query parameters
+
+| Param | Required | Notes |
+| --- | --- | --- |
+| `lat` | yes | Must be inside NYC bounds |
+| `lng` | yes | Must be inside NYC bounds |
+| `tier` | yes | `building` or `block` — which sub-score to explain |
+
+### Sample request
+
+```bash
+curl "http://localhost:3001/api/explanation?lat=40.8116&lng=-73.9465&tier=building"
+```
+
+```js
+const params = new URLSearchParams({ lat, lng, tier }); // tier: "building" | "block"
+const res = await fetch(`http://localhost:3001/api/explanation?${params}`);
+const { explanation, explanationSource } = await res.json();
+
+// Only swap when the upgrade actually happened. A "template" response means the
+// AI was unavailable and this is the same text /api/score already gave you.
+if (explanationSource === "ai") swapExplanation(explanation);
+```
+
+### Response
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `explanation` | string | 1–2 sentences. Never empty, on any code path. |
+| `explanationSource` | `"ai"` \| `"template"` | `"ai"` = swap it in. `"template"` = nothing to swap. |
+| `mock` | `true` | **Mock mode only.** Absent otherwise. |
+
+### Sample response — `200 OK`, AI generated
+
+`tier=building` at 40.8116, -73.9465 (6 heat/hot water, 6 unsanitary, 5 plumbing):
+
+```json
+{
+  "explanation": "Residents in this building can expect a relatively quiet maintenance record, having accumulated only 6 heat and hot water, 6 unsanitary conditions, and 5 plumbing issues over the past 24 months. These figures indicate that service calls for essential utilities and upkeep are fairly infrequent.",
+  "explanationSource": "ai"
+}
+```
+
+The same coordinate with `tier=block` (5475 noise, 585 parking, 174 street condition):
+
+```json
+{
+  "explanation": "Residents here will experience high levels of noise, with 5475 noise complaints filed in the last 24 months. Additionally, neighbors have reported 585 illegal parking and blocked driveways issues along with 174 street and sidewalk condition grievances.",
+  "explanationSource": "ai"
+}
+```
+
+### Sample response — `200 OK`, template fallback
+
+Still a `200`. This is what you get when the AI provider is down, rate-limited,
+or unconfigured — and also when every bucket is `0`, where no AI call is made at
+all. Handle it by doing nothing: the text you already rendered is this text.
+
+```json
+{
+  "explanation": "No 311 complaints were filed in this category in the last 24 months. Residents have filed few maintenance complaints at this address recently.",
+  "explanationSource": "template"
+}
+```
+
+### Sample response — mock mode
+
+`USE_MOCK_DATA=1` returns a fixed string labelled `"ai"` and carries `mock: true`.
+The label is deliberate: it makes the swap-in-place path fire so the frontend
+flow is testable with no AI provider running. Never treat it as generated text.
+
+```json
+{
+  "explanation": "Mock explanation: this location is being served from deterministic mock data, not live 311 records.",
+  "explanationSource": "ai",
+  "mock": true
+}
+```
+
+### Behaviour
+
+- **Synchronous.** The client waits on this one call — there is no polling and
+  no job id. A deliberate simplification.
+- **One tier per call.** Explaining both means two calls, which can run in
+  parallel.
+- **Cached after the first generation.** A repeat call for the same coordinate
+  and tier returns in a few ms without regenerating, and `/api/score` will report
+  `explanationSource: "ai"` from then on. The cache shares the 24h TTL of the
+  complaint counts, and is discarded when those counts refresh.
+- **Always 200 with usable text.** If the AI provider is down, rate-limited, or
+  unconfigured, the response carries the template text and
+  `explanationSource: "template"`. There is no error state for the client to
+  handle — a `"template"` response simply means there is nothing to swap.
+- **No AI call when there is nothing to explain.** If every bucket is 0, the
+  response is the template. Models asked to explain zero complaints produce
+  contradictory text.
+
+| Latency | Case |
+| --- | --- |
+| ~5–20ms | Already generated (cached) |
+| ~0.7–0.9s | Gemini, fresh, complaint counts already cached |
+| ~2.2–2.9s | Ollama on local CPU, fresh, counts already cached |
+| **+1–2s on top** | Counts not cached — this call fetches them from NYC Open Data itself |
+
+That last row is the one that catches people. This endpoint needs the complaint
+counts before it can generate anything, so on a coordinate nobody has looked up
+yet it pays the same upstream fetch `/api/score` does. Measured cold, end to
+end: **~3.9s** on Gemini. Firing both calls in parallel means both requests do
+that fetch; firing `/api/explanation` *after* `/api/score` resolves means the
+counts are cached and only the AI cost remains. Either is fine — the template
+text is already on screen — but do not size a timeout off the 0.9s row.
+
+### Errors
+
+400 on a missing/invalid `tier` or bad coordinates; 503 if the underlying
+complaint counts cannot be fetched from NYC Open Data. An AI failure is **not**
+an error — it returns 200 with the template.
+
+```bash
+$ curl "localhost:3001/api/explanation?lat=40.698&lng=-73.921"
+{"error":"missing_tier","details":"tier is required (building or block)"}
+
+$ curl "localhost:3001/api/explanation?lat=40.698&lng=-73.921&tier=roof"
+{"error":"invalid_tier","details":"tier must be one of: building, block"}
+```
+
+Coordinates are validated before `tier`, so a request that is wrong in both ways
+reports the coordinate problem first. Fix what you are told about, then re-send.
+
+---
+
 ## `GET /health`
 
 For deploy checks and keep-warm pings. No dependencies — answers even when
@@ -331,6 +560,7 @@ where there is nothing useful to say that would not leak internals.
 | 400 | `out_of_bounds` | Outside the NYC bounding box |
 | 400 | `invalid_radius` | Not 1–2000 meters |
 | 400 | `invalid_limit` | Not a whole number in 1–5000 |
+| 400 | `missing_tier` / `invalid_tier` | `/api/explanation` needs `tier=building` or `tier=block` |
 | 404 | `not_found` | Unknown path |
 | 503 | `upstream_unavailable` | NYC Open Data is not responding |
 | 500 | `internal_error` | Anything else; details are not leaked |
@@ -400,6 +630,33 @@ npm run dev        # same, with --watch
 | `MONGODB_DB` | no | Defaults to `should_i_live_here` |
 | `PORT` | no | Defaults to 3001 |
 | `USE_MOCK_DATA` | no | `1` serves deterministic mock data |
+| `AI_PROVIDER` | no | `ollama` (default, local) or `gemini` (deployed) |
+| `GEMINI_API_KEY` | for `gemini` | Never commit it |
+| `GEMINI_MODEL` | no | Overrides the model; default `gemini-3.5-flash-lite` |
+| `GEMINI_THINKING_BUDGET` | no | Set to `0` for `gemini-2.5-*` models, omit otherwise |
+| `OLLAMA_MODEL` | no | Overrides the model; default `llama3.1:8b` |
+| `OLLAMA_ENDPOINT` | no | Defaults to `http://localhost:11434/api/generate` |
+
+**No AI provider is required.** With none configured, every explanation is the
+template and every endpoint still returns 200. The feature degrades, nothing
+breaks.
+
+### Local AI setup (optional)
+
+```bash
+ollama serve            # in a separate terminal
+ollama pull llama3.1:8b # ~4.9GB, once
+npm start               # AI_PROVIDER defaults to ollama
+```
+
+To use Gemini locally instead, put `AI_PROVIDER=gemini` and `GEMINI_API_KEY=...`
+in `.env`.
+
+Compare both providers' output on identical inputs:
+
+```bash
+npm run verify:explanations
+```
 
 ### Mock mode
 
@@ -412,6 +669,11 @@ Mongo, no network. The same coordinate always returns the same report, and all
 three bands are reachable. Mock payloads carry `meta.mock: true`, so nothing can
 be demoed as live data by accident.
 
+Explanations in mock mode are templates on `/api/score` and a fixed string
+labelled `"ai"` from `/api/explanation`, so the swap-in-place flow fires and can
+be built and tested with no AI provider running at all. See the
+[mock sample](#sample-response--mock-mode) for the exact shape.
+
 ---
 
 ## Related docs
@@ -421,3 +683,4 @@ be demoed as live data by accident.
 | `CLAUDE.md` | The spec — buckets, radii, architecture |
 | `documentation/handoff.md` | Decisions, roadblocks, current state |
 | `documentation/m4-m5-scoring-integration.md` | How scoring and the baseline work |
+| `documentation/m6-ai-explanations.md` | How explanations work, prompt rules, model findings |

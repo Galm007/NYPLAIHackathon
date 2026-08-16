@@ -2,6 +2,7 @@ import express from "express";
 import { healthRouter } from "./routes/health.js";
 import { scoreRouter } from "./routes/score.js";
 import { complaintsRouter } from "./routes/complaints.js";
+import { explanationRouter } from "./routes/explanation.js";
 
 /** Custom response headers the browser must be allowed to read cross-origin. */
 const COMPLAINTS_HEADERS = ["X-Complaints-Truncated", "X-Complaints-Limit"];
@@ -30,6 +31,7 @@ export function createApp() {
   app.use(healthRouter);
   app.use(scoreRouter);
   app.use(complaintsRouter);
+  app.use(explanationRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "not_found" });

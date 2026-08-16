@@ -13,7 +13,8 @@
     "baseline": "node --env-file-if-exists=.env scripts/buildBaseline.js",
     "verify:dataset": "node --env-file-if-exists=.env scripts/verifyDataset.js",
     "verify:cache": "node --env-file-if-exists=.env scripts/verifyCache.js",
-    "verify:scoring": "node --env-file-if-exists=.env scripts/verifyScoring.js"
+    "verify:scoring": "node --env-file-if-exists=.env scripts/verifyScoring.js",
+    "verify:explanations": "node --env-file-if-exists=.env scripts/verifyExplanations.js"
   },
   "engines": {
     "node": ">=20.6"

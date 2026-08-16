@@ -4,7 +4,7 @@ Running log for the backend/data layer (Person 1). Newest milestone at the top o
 each section. Spec lives in `../CLAUDE.md`; per-milestone detail in the `mN-*.md`
 files alongside this one.
 
-**Last updated:** 2026-08-15, after M4+M5.
+**Last updated:** 2026-08-15, after M6 (AI explanation layer).
 
 ---
 
@@ -18,13 +18,18 @@ files alongside this one.
 | M3 — P2 real getCounts + Mongo cache | done (tests backfilled for M0–M2 too) |
 | M4 — P3 baseline + pure scoring | done |
 | M5 — P4 swap mock for real | done |
-| M6 — P5 demo hardening | next |
+| M6 — P3.5 AI explanation layer (new scope) | done |
+| M7 — P5 demo hardening | next |
 
 **Runnable today:** `npm start` serves all three endpoints in the frozen contract
 with **live NYC 311 data**, scored against a committed citywide baseline. Needs
 `SOCRATA_APP_TOKEN`; Mongo is optional. `USE_MOCK_DATA=1` still serves the mock
 for offline frontend work.
-**Tested today:** `npm test` — **209 tests, all passing, no network** (135 after M3).
+Each sub-score also carries a plain-English `explanation`. `/api/score` never
+waits on the AI; `GET /api/explanation` is the slow path the frontend calls to
+upgrade template text in place.
+
+**Tested today:** `npm test` — **299 tests, all passing, no network** (209 after M5).
 **Verified today, live:**
 - `npm run verify:scoring` — all checks pass. Block-tier median score **49**,
   full 6–98 spread, all three bands populated. That median is the headline: a
@@ -32,6 +37,9 @@ for offline frontend work.
 - `npm run verify:cache` — all 10 checks pass; cold 1.6–2.5s, warm **2ms**.
 - `npm run verify:dataset` — dataset has not moved, all M2 findings hold.
 - `npm run baseline` — 251 points per tier, 0 failures, ~3 min.
+- `npm run verify:explanations` — **both** AI adapters run against identical
+  inputs. Gemini 0.7–0.9s, Ollama 2.2–2.9s, output close enough to read as one
+  product after the prompt was tightened.
 
 ---
 
@@ -121,6 +129,24 @@ for offline frontend work.
   bare array. Wrapping it in an object would have been cleaner and would have
   broken every existing caller.
 
+### AI explanations (M6)
+- **Only `"ai"` output is cached, never a template.** A cached template is free
+  to rebuild, and storing it would make `/api/score` report `"ai"` — so the
+  frontend would skip its second call and never get a real explanation.
+- **The explanation lives on the counts document**, so one TTL covers both and a
+  count refresh discards text written about the old numbers.
+- **`writeExplanation` does not touch `createdAt`.** Refreshing it would let a
+  frequently-explained address keep stale counts alive forever.
+- **The AI is skipped when every count is zero.** llama3.1:8b called zero
+  complaints "areas of concern"; the template is both correct and honest there.
+- **An unknown `AI_PROVIDER` throws** rather than defaulting. A typo in a Vercel
+  env var would otherwise silently disable the whole feature.
+- **`GEMINI_THINKING_BUDGET` is configurable and off by default**, because
+  whether the field is accepted is model-dependent — and getting it wrong
+  produces a truncated 200, not an error. See roadblock 11.
+- **Prompt divergence is fixed in `prompt.js`, never per adapter.** Three rules
+  exist solely to stop Llama and Gemini drifting into two different voices.
+
 ---
 
 ## Goals achieved
@@ -153,6 +179,13 @@ for offline frontend work.
   correction moved the heat/hot-water median from 1 to 30 and turned a real
   Bushwick building from "fair" (67) into "good" (91). `verify:scoring` is what
   surfaced it — no unit test would have.
+- **Every score now comes with a plain-English reason** (M6), and the AI can
+  fail in any way at all without the user seeing an error or the score slowing
+  down. Verified against both adapters, live.
+- **Both of CLAUDE.md's model assumptions turned out to be wrong, and both were
+  caught by running the thing rather than reading about it** — the specified
+  Gemini model is already unavailable, and its replacement needs the opposite
+  thinking-budget setting. See roadblocks 10 and 11.
 
 ---
 
@@ -231,6 +264,39 @@ Sampling candidate coordinates timed out at 30s. Measured against a plain curl:
 the same query is **0.23s unordered and 9.7s with `$order=unique_key`** — it
 sorts the whole matched set. Sampling is unordered now; reproducibility comes
 from the seeded date slices instead.
+
+### 10. CLAUDE.md's Gemini model is ALREADY dead (M6) — FIXED
+The spec pins `gemini-2.5-flash-lite` and notes a 2026-10-16 shutdown as "fine
+for the hackathon timeline". It is not fine now: with a working key it returns
+`404 "This model is no longer available to new users"` **today**. It still
+appears in the models list, which makes this easy to misdiagnose.
+**Fixed:** swapped to `gemini-3.5-flash-lite` (same tier, available, ~0.8s).
+The spec's own instruction — keep the model string in one place and confirm that
+before relying on it — is what made this a one-constant change.
+
+### 11. A thinking model silently truncated its own answer (M6) — FIXED
+`gemini-2.5-flash` with `maxOutputTokens: 120` and no thinking config returned
+**HTTP 200** with the body "Living here, you would" — 111 thinking tokens had
+eaten the output budget (`finishReason: MAX_TOKENS`). A 200 with a truncated
+fragment is far worse than an error, because nothing downstream flags it.
+Worse, the fix is not portable: `gemini-3.5-flash-lite` **rejects** the same
+`thinkingConfig` with a 400.
+**Fixed three ways:** the budget is a constant (off by default, matching the
+default model); a 400 retries once without the field so model swaps degrade
+rather than break; and a `MAX_TOKENS`-with-no-text response now produces an
+error that names the fix instead of the string "MAX_TOKENS".
+
+### 12. The model invented an arithmetic claim (M6) — FIXED
+llama3.1:8b described 2876-vs-1253 as "nearly three times as many". It is 2.3×.
+Grounded in real numbers, still factually wrong — and wrong in a renting decision.
+**Fixed:** the prompt now forbids ratios, percentages, and "X times more"
+comparisons outright. `verify:explanations` warns if one reappears.
+
+### 13. Route tests were quietly making live AI calls (M6) — FIXED
+The new explanation route tests passed on my machine and would have failed in CI:
+they reached a real Ollama server because one happened to be running locally.
+**Fixed:** the AI provider is mocked in `routes.test.js` and
+`scoreService.test.js`, so the suite is machine-independent and stays offline.
 
 ---
 
@@ -312,10 +378,12 @@ the UI can explain *why* a score is what it is, so it is worth using.
 
 ---
 
-## Next steps — M6 (P5: demo hardening)
+## Next steps — M7 (P5: demo hardening)
 
-1. **Pre-warm the cache for the demo addresses.** Non-negotiable: cold is
-   1.6–2.5s, warm is 2ms, and Socrata has already gone fully dark for hours once.
+1. **Pre-warm the cache for the demo addresses — scores AND explanations.**
+   Non-negotiable: cold is 1.6–2.5s, warm is 2ms, and Socrata has already gone
+   fully dark for hours once. Without an explanation pre-warm the demo opens on
+   template text and visibly swaps a second later.
 2. **Decide the TTL question — it is a spec change, so it needs sign-off.** The
    24h TTL will *delete* pre-warmed documents mid-outage, which is exactly when
    they are needed. Either lengthen it, or drop it and check freshness in-app.
@@ -327,6 +395,11 @@ the UI can explain *why* a score is what it is, so it is worth using.
 5. **Re-run the live checks against the real Atlas cluster**, not the local
    mongod, once the Atlas URI exists: `verify:cache`, then `npm run baseline` so
    the baseline document lands there too.
+6. **Exercise `AI_PROVIDER=gemini` on the deployed target**, not just locally.
+   It works against the live API from Node; it has never run inside a serverless
+   function.
+7. **Run `npm run verify:explanations` one last time before demo day** with both
+   adapters, and read the output for tone rather than for errors.
 
 **Credentials status:** `SOCRATA_APP_TOKEN` is set in `.env` (gitignored).
 `MONGODB_URI` **is** set and points at a local mongod. A real Atlas URI is still
@@ -358,6 +431,25 @@ no document.
   building nobody has ever complained about cannot be sampled, so the baseline
   sits slightly high and real scores are slightly generous. Stated here so
   nobody rediscovers it as a bug.
+- **`AI_PROVIDER=gemini` has never run on Vercel.** It has been verified live
+  from local Node against the real API. The adapter is stateless HTTP so there is
+  no known serverless blocker, but "no known blocker" is not "tested".
+- **Explanations are not pre-warmed.** M7 should generate them for the demo
+  addresses alongside the score pre-warm, or the demo opens on template text and
+  visibly swaps a second later.
+- **Gemini free-tier rate limits are still unverified** (CLAUDE.md open item 6).
+  The cache keeps volume low and a 429 degrades to the template, so this is a
+  cost question, not a correctness one — but check the real numbers before
+  pointing a live audience at it.
+- **`llama3.1:8b` occasionally adds an ungrounded qualifier** — e.g. "relatively
+  low considering the size of this building", when the model is never told the
+  size. Not an invented specific (no address, date, or incident), but it is the
+  8B model reaching. Gemini has not done this. Re-check with
+  `npm run verify:explanations` after any prompt change.
+- **A cached explanation survives until its counts refresh.** After tightening
+  the prompt, previously-cached text stays until the 24h TTL rolls. If a prompt
+  fix must take effect immediately, clear `explanation` on the affected
+  `complaint_cache` documents.
 - **Socrata 503s are real, not theoretical.** It was down for hours during M3.
   Today an uncached address during an outage returns a **503
   `upstream_unavailable`** (M5 — it was a 500). Two things follow for
