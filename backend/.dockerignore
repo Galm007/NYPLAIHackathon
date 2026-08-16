@@ -1,0 +1,24 @@
+# Host node_modules are darwin/arm64 — they must never leak into a linux image.
+node_modules
+npm-debug.log*
+
+# Secrets must not be baked into an image layer. Real config comes from
+# compose env_file / environment at run time.
+.env
+.env.local
+
+.git
+.gitignore
+
+# Not needed at runtime. Tests in particular stay on the host: they use
+# mongodb-memory-server, which would download a linux mongod on every run.
+test
+vitest.config.js
+documentation
+*.md
+
+*.log
+.DS_Store
+Dockerfile
+.dockerignore
+compose.yaml

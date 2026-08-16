@@ -1,0 +1,53 @@
+name: should-i-live-here
+
+services:
+  backend:
+    build: .
+    image: should-i-live-here-backend
+    # Node handles SIGTERM itself (src/index.js), but init gives it a proper
+    # PID 1 to reap under.
+    init: true
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    # Passes SOCRATA_APP_TOKEN / GEMINI_API_KEY through from the gitignored
+    # .env without committing them. required:false so a teammate with no .env
+    # still gets a working (throttled, template-explanation) backend.
+    env_file:
+      - path: .env
+        required: false
+    # Explicit environment wins over env_file. These are the values that are
+    # wrong inside a container.
+    environment:
+      PORT: "3001"
+      # .env says localhost:27017, which inside the container is the container.
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: ${MONGODB_DB:-should-i-live-here}
+      # No Ollama container by design. If `ollama serve` is running on the
+      # host this reaches it; if it is not, explain.js catches the connection
+      # refusal and serves deterministic template text. Set AI_PROVIDER=gemini
+      # in .env to use the hosted model instead.
+      OLLAMA_ENDPOINT: http://host.docker.internal:11434/api/generate
+    extra_hosts:
+      # No-op on Docker Desktop, required on Linux.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    # No host port published: nothing outside compose needs it. Add
+    # `ports: ["27017:27017"]` to attach Compass.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  mongo_data:
