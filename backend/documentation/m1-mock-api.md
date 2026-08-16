@@ -120,7 +120,7 @@ Server booted, every endpoint curled including failure cases:
 
 ## Note for the frontend
 
-The sibling `front/` app currently calls its own Next.js mock routes
+The sibling `frontend/` app currently calls its own Next.js mock routes
 (`/api/report?address=`, `/api/autocomplete?q=`) — **address-keyed**, whereas
 this backend is **coordinate-keyed** and does not geocode. Bridging that is a
 frontend-side change (Google Places Autocomplete supplies the `{lat, lng}`), but
