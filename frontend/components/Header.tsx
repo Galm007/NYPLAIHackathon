@@ -18,7 +18,7 @@ export function Header() {
           >
             <BlockIcon className="h-4.5 w-4.5" />
           </span>
-          MoveCheck NYC
+          Streetwise
         </Link>
         <nav className="flex items-center gap-4 text-sm">
           <Link

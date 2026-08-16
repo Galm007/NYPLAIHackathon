@@ -6,7 +6,7 @@ import { fetchSuggestions } from "@/lib/api";
 import { SearchIcon, ClockIcon, MapPinIcon } from "./icons";
 import type { AutocompleteSuggestion } from "@/lib/types";
 
-const RECENT_KEY = "movecheck.recentSearches";
+const RECENT_KEY = "streetwise.recentSearches";
 const MAX_RECENT = 5;
 
 export function getRecentSearches(): string[] {

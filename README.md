@@ -1,6 +1,6 @@
 <div align="center">
 
-# MoveCheck NYC
+# Streetwise
 ### *Know before you sign the lease.*
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white)
@@ -25,7 +25,7 @@ of plumbing failures. That information *does* exist — it's just buried in
 NYC's public 311 complaint records, scattered across hundreds of millions of
 rows with no way to ask "what does this actually mean for *this* address."
 
-**MoveCheck NYC** answers that question directly. Type an address, and the
+**Streetwise** answers that question directly. Type an address, and the
 app geocodes it, pulls every relevant 311 complaint filed near that location
 over the last two years, and turns the raw counts into two things a person
 can actually act on:

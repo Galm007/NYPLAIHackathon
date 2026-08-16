@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MoveCheck NYC — Check a landlord and block before you sign",
+  title: "Streetwise — Check a landlord and block before you sign",
   description:
     "Search any NYC address for a Building Health Score and Block Quality Score built from public 311 complaint data.",
 };
