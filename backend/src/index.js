@@ -23,8 +23,9 @@ if (!isJwtConfigured()) {
 }
 if (!isMongoConfigured()) {
   console.error(
-    "[auth] FATAL: MONGODB_URI is unset. Mongo is optional for the cache but\n" +
-      "        REQUIRED for auth, and auth now guards every data route.\n" +
+    "[auth] FATAL: MONGODB_URI is REQUIRED and is unset.\n" +
+      "        Mongo stores user accounts and sessions, and auth guards every\n" +
+      "        data route — so without it the app can serve nothing but /health.\n" +
       "        `docker compose up` provides one; see README.md."
   );
   process.exit(1);
