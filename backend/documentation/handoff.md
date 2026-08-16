@@ -4,7 +4,7 @@ Running log for the backend/data layer (Person 1). Newest milestone at the top o
 each section. Spec lives in `../CLAUDE.md`; per-milestone detail in the `mN-*.md`
 files alongside this one.
 
-**Last updated:** 2026-08-15, after M6 (AI explanation layer).
+**Last updated:** 2026-08-15, after M6 (AI explanation layer) + the Docker stack.
 
 ---
 
@@ -20,6 +20,7 @@ files alongside this one.
 | M5 — P4 swap mock for real | done |
 | M6 — P3.5 AI explanation layer (new scope) | done |
 | M7 — P5 demo hardening | next |
+| Docker local stack (not a milestone) | done — see [docker.md](docker.md) |
 
 **Runnable today:** `npm start` serves all three endpoints in the frozen contract
 with **live NYC 311 data**, scored against a committed citywide baseline. Needs
@@ -53,6 +54,11 @@ upgrade template text in place.
   without binding a port — one wiring path, no test/prod divergence.
 - **Vitest** as the test runner (user choice).
 - **Local only this session.** No deploy; no external hosting accounts touched.
+- **Docker is a dev-environment tool, not a deploy decision.** `docker compose up`
+  in `backend/` gives a teammate the API + Mongo with no local installs. It does
+  not replace or block the Vercel path (Vercel ignores Dockerfiles), and
+  `npm run dev` on the host is unchanged. Rationale and the deliberate omission
+  of an Ollama container are in [docker.md](docker.md).
 
 ### Domain
 - **Radii: 25m building, 350m block** — midpoints of the spec's ranges. Single
@@ -461,6 +467,12 @@ no document.
   specifies, so **changing it is a spec change and needs sign-off**, not a quiet
   edit. Decide this before demo day, not during it.
 - **CORS is `*`.** Fine for a hackathon; tighten before anything public.
+- **In Docker, `localhost` is the container.** `compose.yaml` therefore overrides
+  `MONGODB_URI` and `OLLAMA_ENDPOINT` from `.env`. If someone reports "the
+  container ignores my `.env`", this is why — explicit `environment:` wins over
+  `env_file:` by design. Note the containerized backend reaches a **host** Ollama
+  via `host.docker.internal`; that path is untested (Ollama was not running
+  during verification, so only the template fallback was exercised).
 - **`MONGO_SERVER_SELECTION_TIMEOUT_MS`** overrides the 5s Mongo connect timeout.
   Added for tests; also useful if Atlas turns out to be slow to select.
 - **Dataset floor is 2020-01-01.** `WINDOW_MONTHS` beyond ~68 truncates silently.
