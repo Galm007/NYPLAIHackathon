@@ -54,3 +54,30 @@ export interface AutocompleteSuggestion {
   id: string;
   description: string;
 }
+
+export interface TrendPoint {
+  month: string; // "2026-08"
+  count: number;
+}
+
+export interface TimelineEvent {
+  status: ComplaintStatus;
+  date: string; // YYYY-MM-DD
+  note?: string;
+}
+
+export interface ComplaintTimeline {
+  complaintId: string;
+  events: TimelineEvent[];
+}
+
+export type CommentRole = "resident" | "building_admin";
+
+export interface Comment {
+  id: string;
+  author: string;
+  role: CommentRole;
+  text: string;
+  timestamp: string; // YYYY-MM-DD
+  replies?: Comment[];
+}

@@ -5,15 +5,11 @@ import type { AutocompleteSuggestion, ReportResponse } from "./types";
 // mock data; once the real backend exists, either point these at it
 // directly or keep them as a same-origin proxy — callers don't change.
 export async function getLatLng(address: string): Promise<{ lat: number; lng: number } | null> {
-  const query = encodeURIComponent(address.trim());
-  const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`,
-    { headers: { "User-Agent": "nypl-hackathon-app" } }
-  );
+  const res = await fetch(`/api/geocode?address=${encodeURIComponent(address.trim())}`);
   if (!res.ok) return null;
   const data = await res.json();
-  if (!data.length) return null;
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  if (typeof data.lat !== "number" || typeof data.lng !== "number") return null;
+  return { lat: data.lat, lng: data.lng };
 }
 export async function fetchSuggestions(
   query: string,

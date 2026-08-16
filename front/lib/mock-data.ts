@@ -1,5 +1,14 @@
 import { bandForScore, CATEGORY_LABEL } from "./score";
-import type { BlockCounts, BuildingCounts, Complaint, ComplaintStatus, ReportResponse, ScoreSection } from "./types";
+import type {
+  BlockCounts,
+  BuildingCounts,
+  Comment,
+  Complaint,
+  ComplaintStatus,
+  ComplaintTimeline,
+  ReportResponse,
+  ScoreSection,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // This module stands in for the real backend (Node/Express + Socrata proxy +
@@ -222,6 +231,86 @@ function buildComplaints(
     }
   }
   return complaints.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// The real 311/agency APIs don't expose per-complaint status history, only
+// the current status — so there's no live source for this yet. Stands in
+// for a future `/api/complaints/:id/timeline` call: same shape
+// (ComplaintTimeline), deterministic per complaint id so a given complaint
+// always renders the same stubbed history.
+function addDays(iso: string, days: number): string {
+  return new Date(new Date(iso + "T00:00:00").getTime() + days * 86400000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+export function buildComplaintTimeline(complaint: Complaint): ComplaintTimeline {
+  const rand = mulberry32(hashString(complaint.id));
+
+  const events: ComplaintTimeline["events"] = [
+    {
+      status: "open",
+      date: complaint.date,
+      note: "Complaint submitted to NYC 311 and logged for review.",
+    },
+  ];
+  if (complaint.status === "open") {
+    return { complaintId: complaint.id, events };
+  }
+
+  const inProgressDate = addDays(complaint.date, 2 + Math.floor(rand() * 8));
+  events.push({
+    status: "in-progress",
+    date: inProgressDate,
+    note: "Assigned to an inspector; site visit scheduled.",
+  });
+  if (complaint.status === "in-progress") {
+    return { complaintId: complaint.id, events };
+  }
+
+  events.push({
+    status: "closed",
+    date: addDays(inProgressDate, 2 + Math.floor(rand() * 12)),
+    note: "Issue resolved and verified closed by the agency.",
+  });
+  return { complaintId: complaint.id, events };
+}
+
+// Seed thread for the comments feature — there's no real comment backend
+// yet, so each complaint starts with one deterministic resident comment,
+// plus an admin reply once the complaint is past "open" (stands in for a
+// real building admin posting a status update).
+export function buildSeedComments(complaint: Complaint): Comment[] {
+  const categoryText = complaint.label.toLowerCase().replace(/ \/ /g, "/");
+  const resident: Comment = {
+    id: `${complaint.id}-c1`,
+    author: "Resident",
+    role: "resident",
+    text: `Has anyone else been dealing with the ${categoryText} issue here? Wondering if I should file a separate report.`,
+    timestamp: complaint.date,
+  };
+
+  if (complaint.status === "open") {
+    return [resident];
+  }
+
+  return [
+    {
+      ...resident,
+      replies: [
+        {
+          id: `${complaint.id}-c1-r1`,
+          author: "Building Administrator",
+          role: "building_admin",
+          text:
+            complaint.status === "closed"
+              ? "This has been resolved. Thanks for your patience — let us know if it comes back."
+              : "We're on it — a technician has been scheduled to take a look this week.",
+          timestamp: addDays(complaint.date, 2),
+        },
+      ],
+    },
+  ];
 }
 
 function buildScoreSection<K extends string>(
