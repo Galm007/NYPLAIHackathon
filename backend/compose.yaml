@@ -23,6 +23,12 @@ services:
       # .env says localhost:27017, which inside the container is the container.
       MONGODB_URI: mongodb://mongo:27017
       MONGODB_DB: ${MONGODB_DB:-should-i-live-here}
+      # `:?` makes compose refuse to start with a readable message instead of
+      # booting a container that exits on the missing secret. Interpolated from
+      # the gitignored .env, so no secret is committed here. There is no dev
+      # default on purpose — a shared fallback secret is one copy-paste away
+      # from being the production one.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env — see .env.example for how to generate one}
       # No Ollama container by design. If `ollama serve` is running on the
       # host this reaches it; if it is not, explain.js catches the connection
       # refusal and serves deterministic template text. Set AI_PROVIDER=gemini
