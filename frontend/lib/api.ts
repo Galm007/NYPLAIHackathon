@@ -1,4 +1,5 @@
 import { buildReport } from "./mock-data";
+import { getAccessToken, tryRefresh, triggerAuthError } from "./auth";
 import type { AutocompleteSuggestion, ReportResponse } from "./types";
 
 // Geocoding (via /api/geocode, Google under the hood) can return zero
@@ -64,17 +65,44 @@ export async function fetchSuggestions(
 
 const API_BASE_URL = "http://localhost:3001";
 
+async function scoreRequest(lat: number, lng: number, token: string | null): Promise<Response> {
+  return fetch(`${API_BASE_URL}/api/score`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ lat, lng }),
+  });
+}
+
 export async function fetchReport(lat: number, lng: number, address?: string): Promise<ReportResponse> {
+  const token = getAccessToken();
+
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}/api/score`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lat, lng }),
-    });
+    res = await scoreRequest(lat, lng, token);
   } catch {
     if (address) return buildReport(address);
     throw new Error("Couldn't reach the backend — is it running?");
+  }
+
+  if (res.status === 401) {
+    const body = await res.json().catch(() => ({}));
+    if (body.error === "token_expired") {
+      const newToken = await tryRefresh();
+      if (newToken) {
+        try {
+          res = await scoreRequest(lat, lng, newToken);
+        } catch {
+          if (address) return buildReport(address);
+          throw new Error("Couldn't reach the backend — is it running?");
+        }
+        if (res.ok) return res.json();
+      }
+    }
+    triggerAuthError();
+    throw new Error("Please log in to view reports.");
   }
 
   if (!res.ok) {
