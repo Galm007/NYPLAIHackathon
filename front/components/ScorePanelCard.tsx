@@ -2,7 +2,8 @@ import { ComplaintBreakdownBars } from "./ComplaintBreakdownBars";
 import { RecentComplaintsList } from "./RecentComplaintsList";
 import { ScoreMeter } from "./ScoreMeter";
 import { StatusBadge } from "./StatusBadge";
-import { CONFIDENCE_MESSAGE } from "@/lib/score";
+import { TrendSparkline } from "./TrendSparkline";
+import { buildMonthlyTrend, CONFIDENCE_MESSAGE } from "@/lib/score";
 import type { Complaint, Confidence, ScoreBand } from "@/lib/types";
 
 export function ScorePanelCard({
@@ -95,6 +96,15 @@ export function ScorePanelCard({
           score={panel.score}
         />
       </div>
+
+      {panel.recentComplaints !== undefined && (
+        <div>
+          <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)]">
+            12-month trend
+          </p>
+          <TrendSparkline data={buildMonthlyTrend(panel.recentComplaints)} colorVar={colorVar} />
+        </div>
+      )}
 
       {panel.recentComplaints !== undefined && (
         <div>

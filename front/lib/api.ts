@@ -1,10 +1,11 @@
 import { buildReport } from "./mock-data";
 import type { AutocompleteSuggestion, ReportResponse } from "./types";
 
-// Nominatim (the geocoder below) returns zero results whenever a unit
-// designator — apt/unit/suite/floor/room/# — is present, even though the
-// building itself geocodes fine. Since scoring only needs the building's
-// coordinates, strip these before falling back to a second lookup.
+// Geocoding (via /api/geocode, Google under the hood) can return zero
+// results whenever a unit designator — apt/unit/suite/floor/room/# — is
+// present, even though the building itself geocodes fine. Since scoring
+// only needs the building's coordinates, strip these before falling back
+// to a second lookup.
 function stripUnit(address: string): string {
   return address
     .replace(/[,\s]*#\s*[\w-]+/g, "")
@@ -18,14 +19,11 @@ function stripUnit(address: string): string {
 }
 
 async function geocode(query: string): Promise<{ lat: number; lng: number } | null> {
-  const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
-    { headers: { "User-Agent": "nypl-hackathon-app" } }
-  );
+  const res = await fetch(`/api/geocode?address=${encodeURIComponent(query)}`);
   if (!res.ok) return null;
   const data = await res.json();
-  if (!data.length) return null;
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  if (typeof data.lat !== "number" || typeof data.lng !== "number") return null;
+  return { lat: data.lat, lng: data.lng };
 }
 
 // Thin client for the app's own /api/* routes. Today those routes return
@@ -40,6 +38,7 @@ export async function getLatLng(address: string): Promise<{ lat: number; lng: nu
   if (stripped && stripped !== trimmed) return geocode(stripped);
   return null;
 }
+
 export async function fetchSuggestions(
   query: string,
   signal?: AbortSignal

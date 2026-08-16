@@ -20,11 +20,17 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  const mapsApiKey = process.env.GOOGLE_MAPS_API_KEY ?? process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const mapsScriptSrc = mapsApiKey
+    ? `https://maps.googleapis.com/maps/api/js?key=${mapsApiKey}&libraries=maps,marker,places`
+    : null;
+
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>{mapsScriptSrc && <script async src={mapsScriptSrc} />}</head>
       <body className="min-h-full flex flex-col bg-[color:var(--background)] text-[color:var(--foreground)]">
         <Header />
         {children}

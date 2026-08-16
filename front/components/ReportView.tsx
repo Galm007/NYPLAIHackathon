@@ -99,9 +99,10 @@ export function ReportView() {
       </div>
 
       <VerdictBanner
-        buildingBand={report.data.buildingHealth.band}
-        blockBand={report.data.blockQuality.band}
+        building={report.data.buildingHealth}
+        block={report.data.blockQuality}
         address={report.address}
+        windowMonths={report.data.meta.windowMonths}
       />
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">

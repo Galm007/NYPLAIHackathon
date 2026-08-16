@@ -1,4 +1,4 @@
-import type { ScoreBand } from "./types";
+import type { Complaint, ComplaintStatus, ScoreBand, ScoreSection, TrendPoint } from "./types";
 
 export function bandForScore(score: number): ScoreBand {
   if (score >= 70) return "good";
@@ -29,6 +29,18 @@ export const BAND_VAR: Record<ScoreBand, string> = {
   poor: "--status-critical",
 };
 
+export const STATUS_LABEL: Record<ComplaintStatus, string> = {
+  open: "Open",
+  "in-progress": "In Progress",
+  closed: "Closed",
+};
+
+export const STATUS_VAR: Record<ComplaintStatus, string> = {
+  open: "--status-critical",
+  "in-progress": "--status-warning",
+  closed: "--status-good",
+};
+
 export const CATEGORY_LABEL: Record<string, string> = {
   heatHotWater: "Heat / Hot Water",
   unsanitaryCondition: "Unsanitary Condition",
@@ -37,6 +49,78 @@ export const CATEGORY_LABEL: Record<string, string> = {
   parking: "Illegal Parking",
   streetCondition: "Street Condition",
 };
+
+// One-line "why this rating" summary for the verdict banner. Pulls the top
+// 1-2 complaint categories that actually drove the overall band (from
+// whichever of building/block matched it — could be either or both), plus
+// how many of those are still open/in-progress.
+export function explainVerdict(
+  building: ScoreSection<Record<string, number>>,
+  block: ScoreSection<Record<string, number>>,
+  overall: ScoreBand,
+  windowMonths: number
+): string {
+  const sections = [building, block].filter((s) => s.band === overall);
+
+  const contributors = sections
+    .flatMap((section) =>
+      Object.entries(section.counts)
+        .filter(([, count]) => count > 0)
+        .map(([category, count]) => {
+          const label = CATEGORY_LABEL[category] ?? category;
+          const unresolved = (section.recentComplaints ?? []).filter(
+            (c) => c.label === label && c.status !== "closed"
+          ).length;
+          return { category, count, label, unresolved };
+        })
+    )
+    .sort((a, b) => b.count - a.count);
+
+  const label = BAND_LABEL[overall];
+
+  if (contributors.length === 0) {
+    return overall === "good"
+      ? `Rated ${label} — no notable complaints recorded in the last ${windowMonths} months.`
+      : `Rated ${label} based on limited complaint data in the last ${windowMonths} months.`;
+  }
+
+  const top = contributors.slice(0, contributors[1] && contributors[1].count > 0 ? 2 : 1);
+  const totalCount = top.reduce((sum, t) => sum + t.count, 0);
+  const unresolved = top.reduce((sum, t) => sum + t.unresolved, 0);
+
+  const lower = (label: string) => label.toLowerCase().replace(/ \/ /g, "/");
+  const contributorsText =
+    top.length === 2
+      ? `${top[0].count} ${lower(top[0].label)} and ${top[1].count} ${lower(top[1].label)}`
+      : `${top[0].count} ${lower(top[0].label)}`;
+  const complaintWord = totalCount === 1 ? "complaint" : "complaints";
+  const unresolvedClause = unresolved > 0 ? `, including ${unresolved} unresolved` : "";
+  const connector = overall === "good" ? "with" : "due to";
+
+  return `Rated ${label} ${connector} ${contributorsText} ${complaintWord} in the last ${windowMonths} months${unresolvedClause}.`;
+}
+
+// Buckets a panel's complaints into a monthly count for the last N months
+// (oldest to newest), so the trend chart doesn't need its own backend field
+// — it's derived from the same `recentComplaints` list already in the
+// response.
+export function buildMonthlyTrend(
+  complaints: Complaint[] = [],
+  months = 12,
+  reference: Date = new Date()
+): TrendPoint[] {
+  const buckets: TrendPoint[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(reference.getFullYear(), reference.getMonth() - i, 1);
+    buckets.push({ month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, count: 0 });
+  }
+  const indexByMonth = new Map(buckets.map((b, i) => [b.month, i]));
+  for (const complaint of complaints) {
+    const idx = indexByMonth.get(complaint.date.slice(0, 7));
+    if (idx !== undefined) buckets[idx].count += 1;
+  }
+  return buckets;
+}
 
 // Suggested UI copy per confidenceReason — see API reference §Confidence.
 // "stale_baseline_radius" is a backend misconfiguration and intentionally

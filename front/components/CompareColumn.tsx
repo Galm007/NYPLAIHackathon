@@ -83,9 +83,10 @@ export function CompareColumn({
       {report && (
         <>
           <VerdictBanner
-            buildingBand={report.data.buildingHealth.band}
-            blockBand={report.data.blockQuality.band}
+            building={report.data.buildingHealth}
+            block={report.data.blockQuality}
             address={report.address}
+            windowMonths={report.data.meta.windowMonths}
           />
           <ScorePanelCard
             icon={<BuildingIcon className="h-4.5 w-4.5" />}

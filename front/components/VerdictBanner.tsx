@@ -1,18 +1,21 @@
-import { BAND_VAR, BAND_VERDICT, overallBand } from "@/lib/score";
+import { BAND_VAR, BAND_VERDICT, explainVerdict, overallBand } from "@/lib/score";
 import { StatusBadge } from "./StatusBadge";
-import type { ScoreBand } from "@/lib/types";
+import type { BlockCounts, BuildingCounts, ScoreSection } from "@/lib/types";
 
 export function VerdictBanner({
-  buildingBand,
-  blockBand,
+  building,
+  block,
   address,
+  windowMonths,
 }: {
-  buildingBand: ScoreBand;
-  blockBand: ScoreBand;
+  building: ScoreSection<BuildingCounts>;
+  block: ScoreSection<BlockCounts>;
   address: string;
+  windowMonths: number;
 }) {
-  const band = overallBand(buildingBand, blockBand);
+  const band = overallBand(building.band, block.band);
   const color = `var(${BAND_VAR[band]})`;
+  const explanation = explainVerdict(building, block, band, windowMonths);
 
   return (
     <div
@@ -31,6 +34,7 @@ export function VerdictBanner({
         </span>
         <StatusBadge band={band} />
       </div>
+      <p className="mt-1.5 text-sm text-[color:var(--text-muted)]">{explanation}</p>
     </div>
   );
 }
