@@ -242,6 +242,92 @@ export const CACHE_COORD_PRECISION = 4;
 export const CACHE_TTL_SECONDS = 24 * 60 * 60;
 
 // ---------------------------------------------------------------------------
+// AI explanation layer
+// ---------------------------------------------------------------------------
+
+export const AI_PROVIDERS = {
+  ollama: "ollama",
+  gemini: "gemini",
+};
+
+/** Used when AI_PROVIDER is unset. Local dev is the default environment. */
+export const DEFAULT_AI_PROVIDER = AI_PROVIDERS.ollama;
+
+/**
+ * Model strings live HERE and nowhere else — CLAUDE.md calls this out
+ * specifically so a deprecation is a one-line swap. Both are env-overridable so
+ * a deployment can change models without a code change. That design was
+ * immediately vindicated; see the Gemini note.
+ *
+ * GEMINI note (verified live 2026-08-15): CLAUDE.md specifies
+ * `gemini-2.5-flash-lite` and expects it to last until its 2026-10-16 shutdown.
+ * It does NOT — it already returns
+ *   404 "This model is no longer available to new users"
+ * for a newly-issued API key. `gemini-3.5-flash-lite` is the current
+ * equivalent tier: available, ~0.8s, and it needs no thinking config (see
+ * GEMINI_THINKING_BUDGET below). Swapped, not worked around.
+ *
+ * OLLAMA note: CLAUDE.md specifies "llama3". The machine this was built on has
+ * `llama3.1:8b` pulled and not `llama3`, so that is the default here — one
+ * constant (or one env var) to change back, and nothing else knows the name.
+ */
+export const AI_MODELS = {
+  ollama: process.env.OLLAMA_MODEL || "llama3.1:8b",
+  gemini: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+};
+
+/**
+ * Whether to send Gemini an explicit thinking budget, and what it should be.
+ * `null` omits `thinkingConfig` entirely.
+ *
+ * This is model-dependent and there is no safe universal value — measured:
+ *   gemini-3.5-flash-lite  REJECTS thinkingConfig with 400 invalid argument
+ *   gemini-2.5-flash       REQUIRES thinkingBudget: 0, or 111 thinking tokens
+ *                          eat the 120-token cap and the response comes back
+ *                          finishReason MAX_TOKENS with the text "Living here,
+ *                          you would" — a truncated fragment, not an error
+ *
+ * Default is `null` because the default model is 3.5-flash-lite. Set
+ * GEMINI_THINKING_BUDGET=0 when pointing at a 2.5 model. The adapter also
+ * retries without the field on a 400, so a model swap degrades rather than breaks.
+ */
+export const GEMINI_THINKING_BUDGET =
+  process.env.GEMINI_THINKING_BUDGET === undefined
+    ? null
+    : Number(process.env.GEMINI_THINKING_BUDGET);
+
+export const OLLAMA_ENDPOINT =
+  process.env.OLLAMA_ENDPOINT || "http://localhost:11434/api/generate";
+
+export const GEMINI_ENDPOINT_BASE =
+  "https://generativelanguage.googleapis.com/v1beta/models";
+
+/** Consistency over creativity — two lookups of the same block should read alike. */
+export const AI_TEMPERATURE = 0.3;
+
+/** Short output cap. Gemini counts thinking tokens against this, see gemini.js. */
+export const AI_MAX_OUTPUT_TOKENS = 120;
+
+/**
+ * Per-call timeouts. Ollama on CPU is genuinely slow (8B model, tens of
+ * seconds), and this call is on its own request budget by design — but it still
+ * needs a ceiling, or a wedged local model hangs the tab forever.
+ */
+export const AI_TIMEOUT_MS = {
+  ollama: 45000,
+  gemini: 12000,
+};
+
+/** Explanations must be short enough to sit under a score without wrapping forever. */
+export const EXPLANATION_MAX_CHARS = 400;
+
+/** Where an explanation came from. Mirrors `explanationSource` in the API. */
+export const EXPLANATION_SOURCES = {
+  ai: "ai",
+  template: "template",
+};
+
+// ---------------------------------------------------------------------------
 // Input validation
 // ---------------------------------------------------------------------------
 

@@ -17,9 +17,10 @@ import {
 // That is deliberate — this file's job is to prove the wiring produces the
 // contract shape from real code, not to re-test the client.
 
-const { countsSpy, complaintsSpy } = vi.hoisted(() => ({
+const { countsSpy, complaintsSpy, aiSpy } = vi.hoisted(() => ({
   countsSpy: vi.fn(),
   complaintsSpy: vi.fn(),
+  aiSpy: vi.fn(),
 }));
 
 vi.mock("../src/providers/socrata.js", async (importOriginal) => {
@@ -29,6 +30,15 @@ vi.mock("../src/providers/socrata.js", async (importOriginal) => {
     fetchCountsForTier: countsSpy,
     fetchComplaints: complaintsSpy,
   };
+});
+
+// The AI adapter is mocked too. Without this the explanation route reaches a
+// real Ollama server whenever the developer happens to have one running — the
+// suite would pass or fail depending on the machine, and would be making
+// network calls the rest of the suite is careful to avoid.
+vi.mock("../src/providers/ai/index.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, generateExplanation: aiSpy };
 });
 
 const { SocrataError } = await import("../src/providers/socrata.js");
@@ -61,6 +71,8 @@ afterAll(async () => {
 beforeEach(() => {
   countsSpy.mockReset();
   complaintsSpy.mockReset();
+  aiSpy.mockReset();
+  aiSpy.mockResolvedValue("A generated sentence about this location.");
   countsSpy.mockImplementation(async (lat, lng, tier) => COUNTS[tier]);
   complaintsSpy.mockImplementation(async (lat, lng, radius, { limit }) =>
     Array.from({ length: Math.min(25, limit) }, (_, i) => complaintRow(i))
@@ -313,5 +325,127 @@ describe("app wiring", () => {
     const res = await fetch(`${server.baseUrl}/api/score`, { method: "OPTIONS" });
     expect(res.status).toBe(204);
     expect(res.headers.get("access-control-allow-methods")).toContain("POST");
+  });
+});
+
+// --- AI explanation layer ----------------------------------------------------
+
+describe("explanations on POST /api/score", () => {
+  it("always carries an explanation and an honest source label", async () => {
+    const { body } = await server.request("/api/score", {
+      method: "POST",
+      body: { lat: 40.7484, lng: -73.9857 },
+    });
+
+    for (const sub of [body.buildingHealth, body.blockQuality]) {
+      expect(sub.explanation).toBeTypeOf("string");
+      expect(sub.explanation.length).toBeGreaterThan(20);
+      expect(["ai", "template"]).toContain(sub.explanationSource);
+    }
+  });
+
+  it("serves the template on a cache miss — the score never waits on an AI call", async () => {
+    // No Mongo in this suite, so nothing is ever cached: every response here is
+    // the fast path, which is exactly the path that must not touch the AI.
+    const started = Date.now();
+    const { body } = await server.request("/api/score", {
+      method: "POST",
+      body: { lat: 40.6944, lng: -73.9213 },
+    });
+
+    expect(body.buildingHealth.explanationSource).toBe("template");
+    expect(body.blockQuality.explanationSource).toBe("template");
+    // A real AI call is seconds; this asserts we did not make one.
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("explains the tier it is attached to", async () => {
+    const { body } = await server.request("/api/score", {
+      method: "POST",
+      body: { lat: 40.7484, lng: -73.9857 },
+    });
+    expect(body.blockQuality.explanation).toMatch(/block/i);
+    expect(body.buildingHealth.explanation).toMatch(/building|address/i);
+  });
+});
+
+describe("GET /api/explanation", () => {
+  it("returns the AI explanation when the adapter succeeds", async () => {
+    const { status, body } = await server.request(
+      "/api/explanation?lat=40.7484&lng=-73.9857&tier=block"
+    );
+    expect(status).toBe(200);
+    expect(body.explanation).toBe("A generated sentence about this location.");
+    expect(body.explanationSource).toBe("ai");
+    expect(aiSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes only the four contract fields to the adapter", async () => {
+    await server.request("/api/explanation?lat=40.7484&lng=-73.9857&tier=block");
+    expect(Object.keys(aiSpy.mock.calls[0][0]).sort()).toEqual([
+      "band",
+      "counts",
+      "label",
+      "radiusLabel",
+    ]);
+  });
+
+  it("only fetches the tier it was asked about", async () => {
+    // The slow path must not pay for the tier nobody asked for.
+    await server.request("/api/explanation?lat=40.7101&lng=-74.0121&tier=building");
+    expect(countsSpy).toHaveBeenCalledTimes(1);
+    expect(countsSpy.mock.calls[0][2]).toBe("building");
+  });
+
+  it("200s with the template when the AI is unavailable, never an error", async () => {
+    // CLAUDE.md: the demo must never show a broken state for this feature.
+    aiSpy.mockRejectedValue(new Error("ollama unreachable"));
+    const { status, body } = await server.request(
+      "/api/explanation?lat=40.7484&lng=-73.9857&tier=block"
+    );
+    expect(status).toBe(200);
+    expect(body.explanationSource).toBe("template");
+    expect(body.explanation.length).toBeGreaterThan(20);
+  });
+
+  it("does not leak the internal failure reason to the client", async () => {
+    aiSpy.mockRejectedValue(new Error("ECONNREFUSED 127.0.0.1:11434"));
+    const { body } = await server.request(
+      "/api/explanation?lat=40.7484&lng=-73.9857&tier=block"
+    );
+    expect(Object.keys(body).sort()).toEqual(["explanation", "explanationSource"]);
+  });
+
+  it("skips the AI when there is nothing to explain", async () => {
+    countsSpy.mockImplementation(async () => ({
+      heatHotWater: 0,
+      unsanitaryCondition: 0,
+      plumbing: 0,
+    }));
+    const { body } = await server.request(
+      "/api/explanation?lat=40.7484&lng=-73.9857&tier=building"
+    );
+    expect(aiSpy).not.toHaveBeenCalled();
+    expect(body.explanationSource).toBe("template");
+  });
+
+  it.each([
+    ["missing tier", "/api/explanation?lat=40.7484&lng=-73.9857"],
+    ["invalid tier", "/api/explanation?lat=40.7484&lng=-73.9857&tier=roof"],
+    ["missing coords", "/api/explanation?tier=block"],
+    ["out of bounds", "/api/explanation?lat=34.05&lng=-118.24&tier=block"],
+  ])("400s on %s", async (_label, path) => {
+    const { status, body } = await server.request(path);
+    expect(status).toBe(400);
+    expect(body.error).toBeTypeOf("string");
+  });
+
+  it("503s when the upstream counts cannot be fetched", async () => {
+    countsSpy.mockRejectedValue(new SocrataError("socrata 503: down", { status: 503 }));
+    const { status, body } = await server.request(
+      "/api/explanation?lat=40.7484&lng=-73.9857&tier=block"
+    );
+    expect(status).toBe(503);
+    expect(body.error).toBe("upstream_unavailable");
   });
 });

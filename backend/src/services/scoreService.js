@@ -1,8 +1,18 @@
-import { RADIUS_TIERS, COMPLAINTS_DEFAULT_LIMIT } from "../config/constants.js";
+import {
+  RADIUS_TIERS,
+  COMPLAINTS_DEFAULT_LIMIT,
+  EXPLANATION_SOURCES,
+} from "../config/constants.js";
 import { fetchCountsForTier, fetchComplaints } from "../providers/socrata.js";
-import { readCounts, writeCounts, roundCoord } from "../providers/cache.js";
+import {
+  readEntries,
+  writeCounts,
+  writeExplanation,
+  roundCoord,
+} from "../providers/cache.js";
 import { loadBaseline } from "../providers/baseline.js";
-import { buildReport } from "./scoring.js";
+import { buildReport, scoreTier } from "./scoring.js";
+import { explainFromTemplate, explainWithAI } from "./explain.js";
 import { mockScoreReport, mockComplaints } from "./mockData.js";
 
 // Orchestration: cache first, Socrata on a miss, write the result back.
@@ -30,9 +40,19 @@ const ALL_TIERS = Object.keys(RADIUS_TIERS);
 export async function getCounts(lat, lng, { now, tiers = ALL_TIERS, forceRefresh = false } = {}) {
   const coord = { lat: roundCoord(lat), lng: roundCoord(lng) };
 
-  const cached = forceRefresh
+  const entries = forceRefresh
     ? Object.fromEntries(tiers.map((tier) => [tier, null]))
-    : await readCounts(coord.lat, coord.lng, tiers);
+    : await readEntries(coord.lat, coord.lng, tiers);
+
+  // Any explanation cached alongside the counts. Returned so the score path can
+  // serve a stored AI explanation without ever making an AI call itself.
+  const cachedExplanations = Object.fromEntries(
+    tiers.map((tier) => [tier, entries[tier] ?? null])
+  );
+
+  const cached = Object.fromEntries(
+    tiers.map((tier) => [tier, entries[tier]?.counts ?? null])
+  );
 
   const misses = tiers.filter((tier) => cached[tier] === null);
 
@@ -62,6 +82,7 @@ export async function getCounts(lat, lng, { now, tiers = ALL_TIERS, forceRefresh
   return {
     coord,
     counts,
+    cachedExplanations,
     cache: Object.fromEntries(
       tiers.map((tier) => [tier, misses.includes(tier) ? "miss" : "hit"])
     ),
@@ -90,18 +111,103 @@ export function isMockMode() {
 export async function buildScoreReport(lat, lng, options = {}) {
   if (isMockMode()) return mockScoreReport(lat, lng);
 
-  const [{ coord, counts, cache }, baseline] = await Promise.all([
-    getCounts(lat, lng, options),
-    loadBaseline(),
-  ]);
+  const [{ coord, counts, cache, cachedExplanations }, baseline] =
+    await Promise.all([getCounts(lat, lng, options), loadBaseline()]);
 
-  return buildReport(counts, baseline, {
+  const report = buildReport(counts, baseline, {
     // Coordinates are rounded for the cache key, so the circle we actually
     // queried is not exactly the one asked for. Say so rather than implying
     // more precision than we have.
     coord,
     cache,
   });
+
+  // Explanations are attached here, and NEVER generated here. This endpoint is
+  // on the user's critical path; the AI call is not allowed anywhere near it.
+  // A cached AI explanation is served if one exists, otherwise the deterministic
+  // template goes out immediately and the frontend asks /api/explanation for
+  // the real thing.
+  for (const [tier, key] of Object.entries(REPORT_KEYS)) {
+    report[key] = {
+      ...report[key],
+      ...resolveCachedExplanation(tier, report[key], cachedExplanations?.[tier]),
+    };
+  }
+
+  return report;
+}
+
+/** Which response key each radius tier lands under. */
+const REPORT_KEYS = {
+  building: "buildingHealth",
+  block: "blockQuality",
+};
+
+/**
+ * Uses a cached AI explanation when one is stored, otherwise falls back to the
+ * template. Only "ai" is accepted from cache: a cached *template* string is
+ * worth nothing (we can rebuild it for free) and storing it would make the
+ * frontend think the AI had already run and skip its second call.
+ */
+function resolveCachedExplanation(tier, subScore, cached) {
+  if (
+    cached?.explanationSource === EXPLANATION_SOURCES.ai &&
+    typeof cached.explanation === "string" &&
+    cached.explanation !== ""
+  ) {
+    return {
+      explanation: cached.explanation,
+      explanationSource: EXPLANATION_SOURCES.ai,
+    };
+  }
+  return explainFromTemplate(tier, subScore);
+}
+
+/**
+ * The SLOW path behind GET /api/explanation: generate one tier's explanation
+ * with the active AI adapter, store it next to the counts, return it.
+ *
+ * Separated from the score request precisely so the AI latency gets its own
+ * request budget instead of stacking behind Socrata + scoring — which is what
+ * would blow a serverless execution cap.
+ *
+ * Returns a cached AI explanation immediately if one already exists, so a
+ * double-fire from the frontend costs a Mongo read rather than a generation.
+ *
+ * @returns {Promise<{explanation, explanationSource, band, cached: boolean}>}
+ */
+export async function buildExplanation(lat, lng, tier, options = {}) {
+  const [{ coord, counts, cachedExplanations }, baseline] = await Promise.all([
+    getCounts(lat, lng, { ...options, tiers: [tier] }),
+    loadBaseline(),
+  ]);
+
+  const subScore = scoreTier(tier, counts[tier], baseline);
+  const cached = cachedExplanations?.[tier];
+
+  if (
+    cached?.explanationSource === EXPLANATION_SOURCES.ai &&
+    typeof cached.explanation === "string" &&
+    cached.explanation !== ""
+  ) {
+    return {
+      explanation: cached.explanation,
+      explanationSource: EXPLANATION_SOURCES.ai,
+      band: subScore.band,
+      cached: true,
+    };
+  }
+
+  const { explanation, explanationSource } = await explainWithAI(tier, subScore);
+
+  // Only AI output is worth storing — see resolveCachedExplanation. Awaited so
+  // a serverless process cannot exit before the write lands, and it cannot
+  // throw, so it cannot fail the request.
+  if (explanationSource === EXPLANATION_SOURCES.ai) {
+    await writeExplanation(coord.lat, coord.lng, tier, explanation, explanationSource);
+  }
+
+  return { explanation, explanationSource, band: subScore.band, cached: false };
 }
 
 /**

@@ -17,9 +17,10 @@ import { SocrataError } from "../src/providers/socrata.js";
 // the cache behaviour is the thing under test, and the network is the thing we
 // must not touch.
 
-const { fetchSpy, complaintsSpy } = vi.hoisted(() => ({
+const { fetchSpy, complaintsSpy, aiSpy } = vi.hoisted(() => ({
   fetchSpy: vi.fn(),
   complaintsSpy: vi.fn(),
+  aiSpy: vi.fn(),
 }));
 
 vi.mock("../src/providers/socrata.js", async (importOriginal) => {
@@ -31,8 +32,20 @@ vi.mock("../src/providers/socrata.js", async (importOriginal) => {
   };
 });
 
-const { getCounts, buildScoreReport, fetchComplaintPoints, isMockMode } =
-  await import("../src/services/scoreService.js");
+// Mocked so the suite never reaches a real Ollama server on a developer machine
+// that happens to have one running.
+vi.mock("../src/providers/ai/index.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, generateExplanation: aiSpy };
+});
+
+const {
+  getCounts,
+  buildScoreReport,
+  buildExplanation,
+  fetchComplaintPoints,
+  isMockMode,
+} = await import("../src/services/scoreService.js");
 
 const COUNTS = {
   building: { heatHotWater: 12, unsanitaryCondition: 3, plumbing: 1 },
@@ -54,6 +67,8 @@ beforeEach(async () => {
   await db.collection(CACHE_COLLECTION).deleteMany({});
   fetchSpy.mockReset();
   fetchSpy.mockImplementation(async (_lat, _lng, tier) => COUNTS[tier]);
+  aiSpy.mockReset();
+  aiSpy.mockResolvedValue("A generated sentence.");
 });
 
 afterEach(() => {
@@ -377,5 +392,81 @@ describe("mock mode", () => {
     for (const key of ["buildingHealth", "blockQuality"]) {
       expect(Object.keys(mock[key]).sort()).toEqual(Object.keys(live[key]).sort());
     }
+  });
+});
+
+// --- the two-call explanation pattern ---------------------------------------
+
+describe("buildExplanation (the slow path)", () => {
+  it("generates, caches, and returns the AI explanation", async () => {
+    const result = await buildExplanation(40.7484, -73.9857, "block");
+
+    expect(result.explanationSource).toBe("ai");
+    expect(result.explanation).toBe("A generated sentence.");
+    expect(result.cached).toBe(false);
+
+    const db = await getDb();
+    const doc = await db.collection(CACHE_COLLECTION).findOne({ radiusTier: "block" });
+    expect(doc.explanation).toBe("A generated sentence.");
+    expect(doc.explanationSource).toBe("ai");
+  });
+
+  it("only fetches the tier it was asked about", async () => {
+    await buildExplanation(40.7484, -73.9857, "building");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][2]).toBe("building");
+  });
+
+  it("serves a second request from cache without regenerating", async () => {
+    await buildExplanation(40.7484, -73.9857, "block");
+    aiSpy.mockClear();
+
+    const second = await buildExplanation(40.7484, -73.9857, "block");
+    expect(second.cached).toBe(true);
+    expect(second.explanationSource).toBe("ai");
+    // A double-fire from the frontend costs a Mongo read, not a generation.
+    expect(aiSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not cache a template fallback", async () => {
+    // Caching it would make /api/score believe the AI had already run and skip
+    // its second call forever.
+    aiSpy.mockRejectedValue(new Error("ai down"));
+    const result = await buildExplanation(40.7484, -73.9857, "block");
+    expect(result.explanationSource).toBe("template");
+
+    const db = await getDb();
+    const doc = await db.collection(CACHE_COLLECTION).findOne({ radiusTier: "block" });
+    expect(doc.explanation).toBeUndefined();
+  });
+});
+
+describe("explanations on the score path", () => {
+  it("never calls the AI, however cold the cache", async () => {
+    await buildScoreReport(40.7484, -73.9857);
+    expect(aiSpy).not.toHaveBeenCalled();
+  });
+
+  it("serves the template on a miss and the cached AI text afterwards", async () => {
+    const cold = await buildScoreReport(40.7484, -73.9857);
+    expect(cold.blockQuality.explanationSource).toBe("template");
+
+    await buildExplanation(40.7484, -73.9857, "block");
+
+    const warm = await buildScoreReport(40.7484, -73.9857);
+    expect(warm.blockQuality.explanationSource).toBe("ai");
+    expect(warm.blockQuality.explanation).toBe("A generated sentence.");
+    // The tier nobody asked about is still a template.
+    expect(warm.buildingHealth.explanationSource).toBe("template");
+  });
+
+  it("drops a cached explanation when the counts it described are refreshed", async () => {
+    await buildExplanation(40.7484, -73.9857, "block");
+    expect((await buildScoreReport(40.7484, -73.9857)).blockQuality.explanationSource).toBe("ai");
+
+    await getCounts(40.7484, -73.9857, { forceRefresh: true });
+
+    const after = await buildScoreReport(40.7484, -73.9857);
+    expect(after.blockQuality.explanationSource).toBe("template");
   });
 });
