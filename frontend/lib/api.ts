@@ -1,6 +1,6 @@
 import { buildReport } from "./mock-data";
 import { getAccessToken, tryRefresh, triggerAuthError } from "./auth";
-import type { AutocompleteSuggestion, ReportResponse } from "./types";
+import type { AutocompleteSuggestion, Complaint, ComplaintStatus, ReportResponse } from "./types";
 
 // Geocoding (via /api/geocode, Google under the hood) can return zero
 // results whenever a unit designator — apt/unit/suite/floor/room/# — is
@@ -48,6 +48,39 @@ export async function getLatLng(address: string, placeId?: string): Promise<{ la
   const stripped = stripUnit(trimmed);
   if (stripped && stripped !== trimmed) return geocode(stripped);
   return null;
+}
+
+function mapStatus(raw: string | undefined): ComplaintStatus {
+  const s = (raw ?? "").toLowerCase();
+  if (s === "closed") return "closed";
+  if (s.includes("progress") || s === "pending") return "in-progress";
+  return "open";
+}
+
+export async function fetchNearbyComplaints(
+  lat: number,
+  lng: number,
+  radius: number,
+  limit = 25
+): Promise<Complaint[]> {
+  const token = getAccessToken();
+  const url = `${API_BASE_URL}/api/complaints?lat=${lat}&lng=${lng}&radius=${radius}&limit=${limit}`;
+  try {
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return [];
+    const points: Array<{ type: string; lat: number; lng: number; created_date: string; status: string }> =
+      await res.json();
+    return points.map((p, i) => ({
+      id: `${p.type}-${p.created_date}-${i}`,
+      label: p.type,
+      date: p.created_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      status: mapStatus(p.status),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchSuggestions(

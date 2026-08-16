@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { fetchReport, getLatLng } from "@/lib/api";
+import { fetchNearbyComplaints, fetchReport, getLatLng } from "@/lib/api";
 import { AddressSearch } from "./AddressSearch";
 import { MapPanel } from "./MapPanel";
 import { ReportSkeleton } from "./ReportSkeleton";
@@ -34,6 +34,16 @@ export function ReportView() {
         const coords = await getLatLng(address, placeId);
         if (!coords) throw new Error("Couldn't locate that address.");
         const data = await fetchReport(coords.lat, coords.lng, address);
+
+        // Fetch recent complaint points for both panels in parallel so the
+        // "Recent Complaints" section and comments feature are populated.
+        const [buildingComplaints, blockComplaints] = await Promise.all([
+          fetchNearbyComplaints(coords.lat, coords.lng, data.buildingHealth.radiusMeters),
+          fetchNearbyComplaints(coords.lat, coords.lng, data.blockQuality.radiusMeters),
+        ]);
+        data.buildingHealth.recentComplaints = buildingComplaints;
+        data.blockQuality.recentComplaints = blockComplaints;
+
         if (cancelled) return;
         setResult({ address, lat: coords.lat, lng: coords.lng, data });
       } catch (e) {
